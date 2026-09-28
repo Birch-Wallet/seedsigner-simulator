@@ -1,12 +1,15 @@
 """
 Recording: the Rec button hands back an MP4, framed as asked.
 
-Two framings, one file each, on each of the two devices. The screen alone has
-to come out at exactly the firmware's own size, 320x240 or 240x240, because that
-is the point of asking for it; the whole device has to come out at the shell's
-own size, rounded up to even, because H.264 will not take an odd one. Both are read out of the file itself -- the ftyp brand, and
-the width and height the track header declares -- rather than out of anything
-the page says about it.
+Two framings on each of the two devices, and the device framing on both
+backgrounds. The screen alone has to come out at exactly the firmware's own
+size, 320x240 or 240x240, because that is the point of asking for it. The whole
+device has to come out centred, with the same padding on every side of the
+shell -- a little of it, not the art's own uneven room for a drop shadow -- and
+rounded up to even, because H.264 will not take an odd size. Sizes are read out
+of the file itself -- the ftyp brand, and the width and height the track header
+declares -- and the shell's own size out of a second device the test draws, not
+out of anything the recorder says about its frame.
 
 The length is checked too, loosely: the recording is timestamped as frames
 happen rather than on a fixed clock, and a file that came out a tenth as long as
@@ -24,7 +27,7 @@ check is that the button is never offered, and the file checks are reported as
 skipped rather than failed.
 
 The 240x240 pass ends on the switch between devices, which restarts the
-firmware and so has to ask first.
+firmware and so has to ask first, in the device panel itself.
 """
 
 import os
@@ -85,9 +88,24 @@ def describe(data):
     return brand, size, duration
 
 
-def record(page, mode, display):
+def choose(page, mode, background):
+    """Pick the framing and background in the bar's recording panel."""
+    page.locator("#ctl-settings").click()
     page.locator(f"#rec-mode button[data-mode={mode}]").click()
     check(f"{mode}: the choice is kept in the URL", f"record={mode}" in page.url, page.url)
+    light = page.locator("#rec-bg button[data-bg=light]")
+    if mode == "screen":
+        check("screen: the background choice is off, since there is none",
+              light.is_disabled())
+    else:
+        page.locator(f"#rec-bg button[data-bg={background}]").click()
+        check(f"device {background}: the background is kept in the URL",
+              f"recbg={background}" in page.url, page.url)
+    page.locator("#ctl-settings").click()   # and closed again
+
+
+def record(page, mode, display, background="dark"):
+    choose(page, mode, background)
     # Left over a key the whole time: a pointer the video must not show.
     box = page.locator("#device [data-ssd-control=key1]").bounding_box()
     page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
@@ -107,7 +125,7 @@ def record(page, mode, display):
         page.locator("#rec-go").click()
     elapsed = time.time() - began
     download = waiting.value
-    path = harness.artifact(f"record-{display}-{mode}.mp4")
+    path = harness.artifact(f"record-{display}-{mode}-{background}.mp4")
     download.save_as(path)
     with open(path, "rb") as handle:
         data = handle.read()
@@ -124,33 +142,45 @@ def session(browser, display):
         "() => [document.getElementById('screen').width, document.getElementById('screen').height]"))
     wanted = tuple(int(v) for v in display.split("x"))
     check(f"{display}: the firmware draws a {display} screen", screen == wanted, str(screen))
-    check(f"{display}: the device switch says so",
-          page.locator(f"#display-size button[data-display='{display}']")
-              .get_attribute("aria-pressed") == "true")
+    check(f"{display}: the device panel marks it as the one running",
+          page.locator(f"#device-panel .pick[data-display='{display}']")
+              .get_attribute("aria-current") == "true")
 
-    shell = page.evaluate(
-        "() => [document.querySelector('#device .ssd-svg').viewBox.baseVal.width,"
-        "       document.querySelector('#device .ssd-svg').viewBox.baseVal.height]")
-    can = page.evaluate(f"() => SimRecorder.supported({shell[0]}, {shell[1]})")
+    # The shell's own size, from a second device drawn here for the purpose.
+    probe = f"""SeedSignerDevice.render(document.createElement('div'),
+        {{ screenWidth: {wanted[0]}, screenHeight: {wanted[1]} }})"""
+    body = page.evaluate(f"() => {probe}.bodyRect")
+    # Whether the page should have offered it: asked at the size it films at.
+    can = page.evaluate(f"""() => {{
+      const size = SimRecorder.frameSize({probe});
+      return SimRecorder.supported(size.width, size.height);
+    }}""")
     page.wait_for_timeout(500)
-    offered = page.locator("#rec").is_visible()
+    offered = page.locator("#rec-go").is_visible()
     if not can:
         check(f"{display}: without an H.264 encoder, recording is not offered", not offered)
         page.close()
         return False
     check(f"{display}: recording is offered once the firmware is up", offered)
 
-    even = lambda v: int(-(-round(v, 2) // 2) * 2)
-    want = {"screen": wanted, "device": (even(shell[0]), even(shell[1]))}
-    for mode in ("screen", "device"):
-        tag = f"{display} {mode}"
-        name, data, elapsed = record(page, mode, display)
+    for mode, background in (("screen", "dark"), ("device", "dark"), ("device", "light")):
+        tag = f"{display} {mode}" + (f" {background}" if mode == "device" else "")
+        name, data, elapsed = record(page, mode, display, background)
         brand, size, duration = describe(data)
         check(f"{tag}: the download is an .mp4 named for its framing",
               name.startswith(f"seedsigner-{mode}-") and name.endswith(".mp4"), name)
         check(f"{tag}: the file is an MP4", brand is not None, repr(data[:12]))
-        check(f"{tag}: the video is {want[mode][0]}x{want[mode][1]}",
-              size == want[mode], str(size))
+        if mode == "screen":
+            check(f"{tag}: the video is {wanted[0]}x{wanted[1]}", size == wanted, str(size))
+        elif size:
+            across = size[0] - body["width"]
+            down = size[1] - body["height"]
+            check(f"{tag}: the shell has the same padding across as down",
+                  abs(across - down) <= 1, f"{size}: {across:.0f} across, {down:.0f} down")
+            share = down / 2 / body["height"]
+            check(f"{tag}: and a little of it, not the art's room for a shadow",
+                  0.04 <= share <= 0.12, f"{share:.1%} of the shell's height each side")
+            check(f"{tag}: at an even size", size[0] % 2 == 0 and size[1] % 2 == 0, str(size))
         check(f"{tag}: it runs about as long as the recording did",
               duration is not None and abs(duration - elapsed) < 1.5,
               f"{duration}s of video for {elapsed:.1f}s recorded")
@@ -172,19 +202,23 @@ def session(browser, display):
 
 
 def switch(page):
-    """The other device is a restart, so it is asked for first, and the answer
-    counts: no keeps this session, yes reloads at the other size and keeps the
-    rest of the URL."""
+    """The other device is a restart, so it is asked for first, in the panel,
+    and the answer counts: Cancel keeps this session, Switch reloads at the
+    other size and keeps the rest of the URL."""
     before = page.url
-    page.once("dialog", lambda dialog: dialog.dismiss())
-    page.locator("#display-size button[data-display='320x240']").click()
-    page.wait_for_timeout(500)
-    check("declining the switch keeps the session", page.url == before, page.url)
+    page.locator("#ctl-device").click()
+    page.locator("#device-panel .pick[data-display='320x240']").click()
+    check("choosing the other device asks first",
+          page.locator("#device-confirm").is_visible())
+    page.locator("#device-cancel").click()
+    page.wait_for_timeout(300)
+    check("cancelling keeps the session", page.url == before
+          and not page.locator("#device-confirm").is_visible(), page.url)
 
-    page.once("dialog", lambda dialog: dialog.accept())
+    page.locator("#device-panel .pick[data-display='320x240']").click()
     with page.expect_navigation():
-        page.locator("#display-size button[data-display='320x240']").click()
-    check("accepting it reloads at 320x240, keeping ?debug",
+        page.locator("#device-switch").click()
+    check("switching reloads at 320x240, keeping ?debug",
           "display=320x240" in page.url and "debug=1" in page.url, page.url)
 
 

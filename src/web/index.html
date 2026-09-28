@@ -12,32 +12,50 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="SeedSigner">
 <style>
-  :root { color-scheme: dark; }
+  /* The page is one screen, laid out for a landscape phone first: title and
+     warning on top, the device taking whatever height is left, the control bar
+     under it. --page-w and --page-h are the page's own size, which is the
+     viewport's -- or the viewport's turned, when a phone held upright gets the
+     whole page drawn sideways (body.rotated, set by the script). */
+  :root { color-scheme: dark; --page-w: 100vw; --page-h: 100vh; }
+  @supports (height: 100dvh) { :root { --page-w: 100dvw; --page-h: 100dvh; } }
   body {
-    margin: 0; padding: 2rem 1rem; background: #0b0c0e; color: #d7dbe0;
+    margin: 0; background: #0b0c0e; color: #d7dbe0;
     font: 15px/1.6 ui-sans-serif, system-ui, sans-serif;
-    display: flex; flex-direction: column; align-items: center; gap: 1rem;
-    box-sizing: border-box; min-height: 100vh; min-height: 100dvh;
+  }
+  #app {
+    position: relative; box-sizing: border-box;
+    width: var(--page-w); height: var(--page-h); overflow: auto;
+    padding: 1.5rem 1rem 1rem;
+    display: flex; flex-direction: column; align-items: center; gap: .75rem;
+    justify-content: safe center;
+  }
+  body.rotated { overflow: hidden; --page-w: 100dvh; --page-h: 100dvw; }
+  @supports not (height: 100dvh) { body.rotated { --page-w: 100vh; --page-h: 100vw; } }
+  body.rotated #app {
+    position: fixed; top: 0; left: 0;
+    transform-origin: top left; transform: translateX(var(--page-h)) rotate(90deg);
+  }
+  #top {
+    flex: none; width: 100%;
+    display: flex; flex-direction: column; align-items: center; gap: .75rem;
   }
   h1, .warn { max-width: min(46rem, 100%); }
   h1 { text-align: center; }
-  #device { width: 100%; }
-  #stage {
-    position: relative; width: 100%; max-width: min(68rem, 100%);
-    display: flex; flex-direction: column; align-items: center; gap: 1rem;
-  }
-  #stage-device {
-    position: relative; width: 100%;
-    display: flex; flex-direction: column; align-items: center; gap: .5rem;
+  /* The device takes the height the rest of the page leaves it, or the width,
+     whichever runs out first. --stage-h is that height, measured by the script
+     whenever anything around the device changes size. */
+  #stage { flex: none; width: 100%; display: flex; justify-content: center; }
+  #device {
+    width: min(100%, calc(var(--stage-h, 60vh) * var(--ssd-aspect, 2)), 68rem) !important;
+    max-width: none !important;
   }
   #device-band {
-    position: relative; z-index: 4; width: 100%;
+    position: relative; z-index: 4; width: 100%; flex: none;
     display: flex; flex-wrap: wrap; align-items: center;
     justify-content: center; gap: .5rem;
   }
-  #network-line {
-    display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: .75rem;
-  }
+  #device-band:not(:has(*)) { display: none; }
   #network:empty { display: none; }
   #network {
     margin: 0; font-size: .68rem; letter-spacing: .06em;
@@ -51,7 +69,7 @@
   @media (max-width: 30rem) {
     body:not(.mainnet) #warn-row .warn { font-size: .82em; padding: .45rem .6rem; }
   }
-  #warn-row #about, #warn-row #fullscreen { flex: none; }
+  #warn-row #about { flex: none; }
   #screen {
     display: block; width: 100%; height: 100%;
     image-rendering: pixelated; background: #000;
@@ -125,8 +143,8 @@
     to { background-position: -50%; }
   }
   #camera-hint {
-    margin: .5rem auto 0; max-width: 44ch; color: #ef4444;
-    font-size: .85em; text-align: center;
+    margin: 0 auto; max-width: 44ch; color: #ef4444;
+    font-size: .85em; text-align: center; flex: none;
   }
   #camera-hint:empty { display: none; }
   header {
@@ -198,86 +216,124 @@
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
     overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
   }
-  #fullscreen {
-    display: none; align-items: center; justify-content: center; gap: 0;
-    min-width: 2.6rem; min-height: 2.6rem;
-    font: inherit; font-size: .9em; color: #8b939e;
-    background: #1d2026; border: 1px solid #2a2e35; border-radius: 5px;
-    padding: .5rem .55rem; cursor: pointer;
+  /* The bar under the device: icons only, every one a thumb target, each
+     named by its aria-label and title. */
+  #controls {
+    flex: none; position: relative; z-index: 60;
+    display: flex; align-items: center; justify-content: center; gap: .6rem;
   }
-  #fullscreen svg {
-    width: 1.4em; height: 1.4em; flex: none;
-    fill: none; stroke: currentColor; stroke-width: 1.6;
+  #controls:not(.rec-offered) .rec-only { display: none; }
+  .ctl-wrap { position: relative; display: flex; }
+  .ctl {
+    display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
+    min-width: 2.75rem; min-height: 2.75rem; box-sizing: border-box;
+    font: inherit; font-size: .9em; color: #9aa3ae;
+    background: #1d2026; border: 1px solid #2a2e35; border-radius: 10px;
+    padding: .5rem; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  .ctl svg {
+    width: 1.45em; height: 1.45em; flex: none;
+    fill: none; stroke: currentColor; stroke-width: 1.7;
     stroke-linecap: round; stroke-linejoin: round;
+  }
+  @media (hover: hover) { .ctl:hover:not(:disabled) { color: #d7dbe0; border-color: #3a3f47; } }
+  .ctl:focus-visible { outline: 2px solid #f7931a; outline-offset: 2px; }
+  .ctl:disabled { cursor: default; opacity: .5; }
+  .ctl[aria-expanded=true], .ctl[aria-pressed=true] {
+    color: #f7931a; border-color: #f7931a; background: #16181c;
   }
   @media (prefers-reduced-motion: no-preference) {
     #fullscreen svg path { transition: d .18s ease; }
   }
-  #fullscreen:hover { color: #d7dbe0; border-color: #3a3f47; }
-  #fullscreen[aria-pressed=true] { color: #f7931a; border-color: #f7931a; background: #16181c; }
-  #fullscreen:focus-visible { outline: 2px solid #f7931a; outline-offset: 2px; }
+  /* Fullscreen is for a phone or a small window, where the page around the
+     device costs it key size. */
+  #fullscreen { display: none; }
   @media (max-width: 46rem), (max-height: 30rem) {
     body.touch #fullscreen { display: inline-flex; }
   }
-  #rec { display: none; flex: none; align-items: center; gap: .35rem; }
-  #rec.offered { display: inline-flex; }
-  #rec-go, .seg button {
-    display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
-    min-height: 2.6rem; font: inherit; font-size: .82em; color: #8b939e;
-    background: #1d2026; border: 1px solid #2a2e35; border-radius: 5px;
-    padding: .35rem .6rem; cursor: pointer;
-  }
-  #rec-go:hover:not(:disabled), .seg button:hover:not(:disabled) {
-    color: #d7dbe0; border-color: #3a3f47;
-  }
-  #rec-go:focus-visible, .seg button:focus-visible { outline: 2px solid #f7931a; outline-offset: 2px; }
-  #rec-go:disabled, .seg button:disabled { cursor: default; opacity: .5; }
-  /* Two buttons joined into one switch, the pressed one lit. */
-  .seg { display: inline-flex; }
-  .seg button { border-radius: 0; }
-  .seg button:first-child { border-radius: 5px 0 0 5px; }
-  .seg button:last-child { border-radius: 0 5px 5px 0; border-left: 0; }
-  .seg button[aria-pressed=true] { color: #f7931a; border-color: #f7931a; background: #16181c; }
-  .seg button:last-child[aria-pressed=true] { border-left: 1px solid #f7931a; margin-left: -1px; }
-  #display-size button { min-height: 2.2rem; font-variant-numeric: tabular-nums; }
+  body.rotated #fullscreen { display: inline-flex; }
   #rec-go::before {
-    content: ""; width: .7em; height: .7em; border-radius: 50%;
+    content: ""; width: .85em; height: .85em; border-radius: 50%;
     background: currentColor; flex: none;
   }
-  #rec #rec-go[aria-pressed=true] { color: #ef4444; border-color: #7f1d1d; background: #1b0f10; }
+  #rec-go { color: #ef4444; }
+  #controls #rec-go[aria-pressed=true] { color: #ef4444; border-color: #7f1d1d; background: #1b0f10; }
   #rec-go[aria-pressed=true]::before { border-radius: 2px; }
   #rec-time { font-variant-numeric: tabular-nums; min-width: 4.5ch; text-align: left; }
   #rec-time:empty { display: none; }
+  #network {
+    margin: 0 0 0 .2rem; font-size: .68rem; letter-spacing: .06em;
+    text-transform: uppercase; color: #656c76;
+  }
+  /* A small panel over the bar, opened by its button. Inside the page, so it
+     turns with it. */
+  .pop {
+    position: absolute; bottom: calc(100% + .6rem); left: 50%; transform: translateX(-50%);
+    width: max-content; max-width: min(19rem, calc(var(--page-w) - 2rem));
+    box-sizing: border-box; padding: .75rem;
+    background: #15171b; border: 1px solid #2f343c; border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .55);
+    display: flex; flex-direction: column; gap: .5rem; text-align: left;
+  }
+  .pop[hidden] { display: none; }
+  .pop-title {
+    margin: 0 0 .1rem; font-size: .72rem; letter-spacing: .08em;
+    text-transform: uppercase; color: #7c848f;
+  }
+  .pop p { margin: 0; font-size: .88em; color: #c3cad3; }
+  .pick, .pop-actions button, .seg button {
+    font: inherit; font-size: .9em; color: #c3cad3; cursor: pointer;
+    background: #1d2026; border: 1px solid #2a2e35; border-radius: 8px;
+    min-height: 2.75rem; padding: .4rem .8rem;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .pick {
+    display: flex; align-items: center; justify-content: space-between; gap: 1.5rem;
+    width: 100%; text-align: left;
+  }
+  .pick small { color: #7c848f; font-variant-numeric: tabular-nums; }
+  .pick[aria-current=true] { color: #f7931a; border-color: #f7931a; background: #16181c; }
+  .pop-actions { display: flex; justify-content: flex-end; gap: .5rem; }
+  #device-switch { color: #f7931a; border-color: #f7931a; }
+  .pop-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+  .pop-row > span:first-child { font-size: .88em; color: #9aa3ae; }
+  .pick:focus-visible, .pop-actions button:focus-visible, .seg button:focus-visible {
+    outline: 2px solid #f7931a; outline-offset: 2px;
+  }
+  .seg button:disabled { cursor: default; opacity: .45; }
+  /* Two buttons joined into one switch, the pressed one lit. */
+  .seg { display: inline-flex; }
+  .seg button { border-radius: 0; }
+  .seg button:first-child { border-radius: 8px 0 0 8px; }
+  .seg button:last-child { border-radius: 0 8px 8px 0; border-left: 0; }
+  .seg button[aria-pressed=true] { color: #f7931a; border-color: #f7931a; background: #16181c; }
+  .seg button:last-child[aria-pressed=true] { border-left: 1px solid #f7931a; margin-left: -1px; }
   #record-hint {
     margin: 0 auto; max-width: 44ch; color: #ef4444;
-    font-size: .85em; text-align: center;
+    font-size: .85em; text-align: center; flex: none;
   }
   #record-hint:empty { display: none; }
-  /* No room beside the warning on a phone: Rec alone, recording the framing the
-     URL asks for, the device unless it says ?record=screen. */
-  @media (max-width: 30rem) {
-    #rec-mode { display: none; }
-  }
-  body.solo { overflow: hidden; }
-  body.solo #about, body.solo #rec, body.solo #display-size { display: none; }
-  body.solo #stage-device { position: static; z-index: auto; background: none; }
-  body.solo #device-band { z-index: auto; }
-  body.solo::before { content: ""; position: fixed; inset: 0; z-index: 49; background: #0b0c0e; }
+  /* Short pages -- every phone on its side, and every phone held upright once
+     the page is turned -- put the title and the warning on one line, and give
+     the rest of the height to the device. */
+  body.compact #app { padding: .5rem .75rem; gap: .4rem; }
+  body.compact #top { flex-direction: row; justify-content: center; gap: .75rem; }
+  body.compact h1 { font-size: 1.05rem; white-space: nowrap; }
+  body.compact #warn-row { width: auto; }
+  body.compact .warn { font-size: .78em; padding: .3rem .6rem; }
+  body.compact #about > summary { width: 2.2rem; height: 2.2rem; }
+  /* Fullscreen: the device alone, filling the page, with only the control
+     that brings the page back. */
+  body.solo #app { overflow: hidden; }
+  body.solo #app::before { content: ""; position: absolute; inset: 0; z-index: 49; background: #0b0c0e; }
+  body.solo #about { display: none; }
+  body.solo #controls > :not(#fullscreen) { display: none; }
   body.solo #device {
     position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 50;
-    width: min(100svw, calc(100svh * var(--ssd-aspect, 2))) !important;
-    max-width: none !important;
-  }
-  @media (orientation: portrait) {
-    body.touch.solo #device {
-      transform: translate(-50%, -50%) rotate(90deg);
-      width: min(100svh, calc(100svw * var(--ssd-aspect, 2))) !important;
-    }
-    body.touch.solo #fullscreen { transform: rotate(90deg); top: auto; bottom: .5rem; right: .5rem; }
+    width: min(var(--page-w), calc(var(--page-h) * var(--ssd-aspect, 2))) !important;
   }
   body.solo #fullscreen { position: fixed; z-index: 62; top: .5rem; right: .5rem; }
   @media (max-width: 30rem) {
-    body { padding: 1rem .75rem; gap: .75rem; }
     h1 { font-size: 1.3rem; }
     #build dl { grid-template-columns: 1fr; gap: 0; }
     #build dd { margin: 0 0 .5rem; }
@@ -285,6 +341,8 @@
 </style>
 </head>
 <body>
+<div id="app">
+  <div id="top">
   <header>
     <h1>SeedSigner Web Simulator</h1>
   </header>
@@ -327,19 +385,94 @@
           <p class="verdict" id="build-verdict" data-state="pending"></p>
         </div>
 
-        <p><strong>Two devices.</strong> The switch under the device picks the
-        hardware: the SeedSigner Plus with its 320&times;240 screen, or the
-        original build on a Waveshare 1.3" hat at 240&times;240.
-        Switching starts the firmware again.</p>
+        <p><strong>Two devices.</strong> The device button under the simulator
+        picks the hardware: the SeedSigner Plus with its 320&times;240 screen, or
+        the original build on a Waveshare 1.3" hat at 240&times;240. Switching
+        starts the firmware again.</p>
 
-        <p><strong>Recording it.</strong> Record saves an MP4 of the session,
-        either the firmware's screen alone at its own size or the
-        whole device. The video is made in this browser from the firmware's
-        frames, not by filming the page, so the pointer is never in it, and
-        nothing is uploaded anywhere.</p>
+        <p><strong>Recording it.</strong> The record button saves an MP4 of the
+        session: the firmware's screen alone at its own size, or the whole device
+        centred on a dark or light background, chosen under the gear. The video
+        is made in this browser from the firmware's frames, not by filming the
+        page, so the pointer is never in it, and nothing is uploaded anywhere.</p>
       </div>
     </details>
-    <button type="button" id="fullscreen" aria-pressed="false">
+  </div>
+  </div>
+  <div id="stage">
+    <div id="device"></div>
+    <canvas id="screen" width="320" height="240"></canvas>
+  </div>
+  <div id="device-band">
+    <div id="boot">
+      <p id="boot-load">
+        <span id="boot-pixels" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span>
+        <span id="boot-label">Loading</span>
+        <span id="boot-elapsed">0.0s</span>
+      </p>
+      <p id="status">starting…</p>
+    </div>
+  </div>
+  <nav id="controls" aria-label="Simulator controls">
+    <div class="ctl-wrap">
+      <button type="button" class="ctl" id="ctl-device" aria-expanded="false"
+              aria-controls="device-panel" aria-label="Choose the device"
+              title="Choose the device">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <rect x="1.5" y="6.5" width="21" height="11" rx="5.5"></rect>
+          <rect x="9" y="9" width="6" height="6" rx="1"></rect>
+        </svg>
+      </button>
+      <div class="pop" id="device-panel" role="dialog" aria-label="Device" hidden>
+        <p class="pop-title">Device</p>
+        <button type="button" class="pick" data-display="320x240">
+          SeedSigner Plus <small>320×240</small></button>
+        <button type="button" class="pick" data-display="240x240">
+          Waveshare 1.3" hat <small>240×240</small></button>
+        <div id="device-confirm" hidden>
+          <p>The firmware restarts, and anything loaded in this session is lost.</p>
+          <div class="pop-actions">
+            <button type="button" id="device-cancel">Cancel</button>
+            <button type="button" id="device-switch">Switch</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <button type="button" class="ctl rec-only" id="rec-go" aria-pressed="false"
+            title="Start recording">
+      <span id="rec-label" class="offscreen">Start recording</span><span id="rec-time"></span>
+    </button>
+    <div class="ctl-wrap rec-only">
+      <button type="button" class="ctl" id="ctl-settings" aria-expanded="false"
+              aria-controls="settings-panel" aria-label="Recording settings"
+              title="Recording settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <circle cx="12" cy="12" r="6.5"></circle>
+          <circle cx="12" cy="12" r="2.4"></circle>
+          <path d="M18.5 12H21M16.6 7.4l1.8-1.8M12 5.5V3M7.4 7.4 5.6 5.6M5.5 12H3M7.4 16.6l-1.8 1.8M12 18.5V21M16.6 16.6l1.8 1.8"></path>
+        </svg>
+      </button>
+      <div class="pop" id="settings-panel" role="dialog" aria-label="Recording settings" hidden>
+        <p class="pop-title">Recording</p>
+        <div class="pop-row">
+          <span>Frame</span>
+          <span id="rec-mode" class="seg" role="group" aria-label="What to record">
+            <button type="button" data-mode="screen" aria-pressed="false"
+                    title="Record the screen alone, at its own size">Screen</button>
+            <button type="button" data-mode="device" aria-pressed="true"
+                    title="Record the whole device">Device</button>
+          </span>
+        </div>
+        <div class="pop-row">
+          <span>Background</span>
+          <span id="rec-bg" class="seg" role="group" aria-label="Background behind the device">
+            <button type="button" data-bg="dark" aria-pressed="true">Dark</button>
+            <button type="button" data-bg="light" aria-pressed="false">Light</button>
+          </span>
+        </div>
+      </div>
+    </div>
+    <button type="button" class="ctl" id="fullscreen" aria-pressed="false">
       <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <path id="fs-tl" d="M4 9.5V4h5.5"></path>
         <path id="fs-tr" d="M20 9.5V4h-5.5"></path>
@@ -348,45 +481,11 @@
       </svg>
       <span id="fullscreen-label" class="offscreen">Fill the screen</span>
     </button>
-    <div id="rec">
-      <span id="rec-mode" class="seg" role="group" aria-label="What to record">
-        <button type="button" data-mode="screen" aria-pressed="false"
-                title="Record the screen alone, 320×240">Screen</button>
-        <button type="button" data-mode="device" aria-pressed="true"
-                title="Record the whole device">Device</button>
-      </span>
-      <button type="button" id="rec-go" aria-pressed="false" title="Start recording">
-        <span id="rec-label">Rec</span><span id="rec-time"></span>
-      </button>
-    </div>
-  </div>
-  <div id="stage">
-    <div id="stage-device">
-      <div id="device"></div>
-      <canvas id="screen" width="320" height="240"></canvas>
-      <div id="device-band">
-        <div id="boot">
-          <p id="boot-load">
-            <span id="boot-pixels" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span>
-            <span id="boot-label">Loading</span>
-            <span id="boot-elapsed">0.0s</span>
-          </p>
-          <p id="status">starting…</p>
-        </div>
-      </div>
-      <p id="camera-hint"></p>
-      <p id="record-hint"></p>
-      <div id="network-line">
-        <span id="display-size" class="seg" role="group" aria-label="Which device">
-          <button type="button" data-display="320x240"
-                  title="SeedSigner Plus, 320×240 screen">320×240</button>
-          <button type="button" data-display="240x240"
-                  title="Waveshare 1.3&quot; hat, 240×240 screen">240×240</button>
-        </span>
-        <p id="network"></p>
-      </div>
-    </div>
-  </div>
+    <p id="network"></p>
+  </nav>
+  <p id="camera-hint"></p>
+  <p id="record-hint"></p>
+</div>
 
 <script src="seedsigner-device.js"></script>
 <script src="camera.js"></script>
@@ -455,11 +554,15 @@ document.addEventListener("pointerdown", (event) => {
 document.addEventListener("keydown", (event) => {
   if (aboutPanel.open && event.key === "Escape") aboutPanel.open = false;
 });
-// Where the i actually is, so the panel's text starts below it.
+// Where the i actually is, so the panel's text starts below it. Measured on
+// the screen, then turned back into the page's own coordinates when the page
+// is drawn sideways: its top edge runs down the screen's right-hand side.
 aboutPanel.addEventListener("toggle", () => {
   if (!aboutPanel.open) return;
   const icon = aboutPanel.querySelector("summary").getBoundingClientRect();
-  aboutPanel.style.setProperty("--about-top", Math.round(icon.bottom + 20) + "px");
+  const bottom = document.body.classList.contains("rotated")
+    ? document.documentElement.clientWidth - icon.left : icon.bottom;
+  aboutPanel.style.setProperty("--about-top", Math.round(bottom + 20) + "px");
 });
 
 // The build half of the i panel, read from seedsigner-stock.build-info.json, which
@@ -604,10 +707,56 @@ function paint(bytes) {
 canvas.width = W; canvas.height = H;
 mountDevice(W, H);
 
-// Fullscreen: the device alone, laid along the viewport's longer side so its
-// keys are thumb sized on a phone. The same control, or Escape, comes back out.
+// Mobile first. A phone is for landscape: held upright, the whole page is
+// drawn turned a quarter, so it reads right with the phone on its side, and on
+// its side it is simply the page. Short pages -- a phone either way -- put the
+// title and warning on one line so the device gets the height. Browsers can
+// only lock the orientation from fullscreen, and iOS not even then, so turning
+// the page is what makes landscape happen everywhere.
+const canTurn = matchMedia("(pointer: coarse)").matches
+             || navigator.maxTouchPoints > 0;
+if (canTurn) document.body.classList.add("touch");
+function layOut() {
+  const width = document.documentElement.clientWidth;
+  const height = window.innerHeight;
+  const rotated = canTurn && height > width && width <= 640;
+  document.body.classList.toggle("rotated", rotated);
+  document.body.classList.toggle("compact", (rotated ? width : height) < 560);
+}
+
+// The height left for the device: the page's, less everything else on it and
+// the gaps between. Measured rather than guessed, because what else is on it
+// changes: a camera hint, a recording error, the title and warning sharing a
+// line on a short page.
+const app = document.getElementById("app");
+const stage = document.getElementById("stage");
+function fitDevice() {
+  const style = getComputedStyle(app);
+  let used = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+  let shown = 0;
+  for (const el of app.children) {
+    if (el === stage || getComputedStyle(el).display === "none") continue;
+    used += el.offsetHeight;
+    shown += 1;
+  }
+  used += (parseFloat(style.rowGap) || 0) * shown;
+  app.style.setProperty("--stage-h", Math.max(120, app.clientHeight - used) + "px");
+}
+layOut();
+fitDevice();
+addEventListener("resize", () => { layOut(); fitDevice(); });
+addEventListener("orientationchange", () => { layOut(); fitDevice(); });
+if (window.ResizeObserver) {
+  const refit = new ResizeObserver(fitDevice);
+  for (const el of app.children) if (el !== stage) refit.observe(el);
+}
+
+// Fullscreen: the device alone, filling the page, so its keys are thumb sized
+// on a phone. The same control, or Escape, comes back out. Where the browser
+// has real fullscreen, that is asked for too, and with it a landscape lock.
 const fullscreenButton = document.getElementById("fullscreen");
 const fullscreenLabel = document.getElementById("fullscreen-label");
+let fullscreenByUs = false;
 
 function setSolo(on) {
   document.body.classList.toggle("solo", on);
@@ -622,32 +771,96 @@ function setSolo(on) {
   }
   fullscreenLabel.textContent = on ? "Back to the page" : "Fill the screen";
   fullscreenButton.title = fullscreenLabel.textContent;
+  fullscreenButton.setAttribute("aria-label", fullscreenLabel.textContent);
+  // Only a phone or a tablet asks the browser for fullscreen: a laptop with a
+  // touchscreen still has a window to keep.
+  if (on && matchMedia("(pointer: coarse)").matches && document.fullscreenEnabled
+      && !document.fullscreenElement) {
+    document.documentElement.requestFullscreen().then(() => {
+      fullscreenByUs = true;
+      return screen.orientation && screen.orientation.lock
+        ? screen.orientation.lock("landscape") : null;
+    }).catch(() => {});
+  } else if (!on && fullscreenByUs && document.fullscreenElement) {
+    fullscreenByUs = false;
+    document.exitFullscreen().catch(() => {});
+  }
 }
 fullscreenButton.title = fullscreenLabel.textContent;
+fullscreenButton.setAttribute("aria-label", fullscreenLabel.textContent);
 fullscreenButton.addEventListener("click", () => {
-  soloByTurn = false;
   setSolo(!document.body.classList.contains("solo"));
   // The firmware reads the keyboard off the document, so focus goes back to it.
   fullscreenButton.blur();
 });
-// A phone turned on its side is asking for the device to fill the screen, and
-// turning it back undoes that, unless the button is what turned it on.
-const canTurn = matchMedia("(pointer: coarse)").matches
-             || navigator.maxTouchPoints > 0;
-if (canTurn) document.body.classList.add("touch");
-const sideways = matchMedia("(orientation: landscape) and (max-height: 30rem)");
-let soloByTurn = false;
-function followTheTurn(turned) {
-  if (!canTurn) return;
-  const solo = document.body.classList.contains("solo");
-  if (turned && !solo) { soloByTurn = true; setSolo(true); }
-  else if (!turned && solo && soloByTurn) { soloByTurn = false; setSolo(false); }
-}
-sideways.addEventListener("change", (event) => followTheTurn(event.matches));
-followTheTurn(sideways.matches);
+// Leaving the browser's fullscreen by its own gesture leaves ours too.
+document.addEventListener("fullscreenchange", () => {
+  if (!document.fullscreenElement && fullscreenByUs) {
+    fullscreenByUs = false;
+    setSolo(false);
+  }
+});
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") setSolo(false);
+});
+
+// The bar's two panels: one open at a time, closed by their button again, a
+// tap anywhere else, or Escape.
+const panels = [
+  [document.getElementById("ctl-device"), document.getElementById("device-panel")],
+  [document.getElementById("ctl-settings"), document.getElementById("settings-panel")],
+];
+function closePanels(except) {
+  for (const [button, panel] of panels) {
+    if (panel === except) continue;
+    panel.hidden = true;
+    button.setAttribute("aria-expanded", "false");
+  }
+  if (except !== devicePanel) deviceConfirm.hidden = true;
+}
+for (const [button, panel] of panels) {
+  button.addEventListener("click", () => {
+    const opening = panel.hidden;
+    closePanels(panel);
+    panel.hidden = !opening;
+    button.setAttribute("aria-expanded", String(opening));
+    if (!opening && panel === devicePanel) deviceConfirm.hidden = true;
+    button.blur();
+  });
+}
+document.addEventListener("pointerdown", (event) => {
+  if (!event.target.closest(".ctl-wrap")) closePanels(null);
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closePanels(null);
+});
+
+// Which device: the firmware lays its screens out for the panel at boot, so the
+// other one means starting it again, and whatever this session had loaded goes
+// with it. Asked in the panel -- a browser's own confirm() would come up the
+// wrong way round over a page drawn sideways -- then the page reloads with
+// ?display, keeping the rest.
+const devicePanel = document.getElementById("device-panel");
+const deviceConfirm = document.getElementById("device-confirm");
+const devicePicks = devicePanel.querySelectorAll(".pick");
+let deviceWanted = null;
+for (const pick of devicePicks) {
+  pick.setAttribute("aria-current", String(pick.dataset.display === DISPLAY));
+  pick.addEventListener("click", () => {
+    pick.blur();
+    deviceWanted = pick.dataset.display;
+    deviceConfirm.hidden = deviceWanted === DISPLAY;
+  });
+}
+document.getElementById("device-cancel").addEventListener("click", (event) => {
+  event.currentTarget.blur();
+  deviceConfirm.hidden = true;
+});
+document.getElementById("device-switch").addEventListener("click", () => {
+  const url = new URL(location.href);
+  url.searchParams.set("display", deviceWanted);
+  location.assign(url);
 });
 
 // Recording: an MP4 of the screen alone or of the whole device, composed from the
@@ -655,14 +868,18 @@ document.addEventListener("keydown", (event) => {
 // pointer is never in it. Offered once the firmware is drawing and the browser
 // has been asked whether it can encode one; the choice of framing rides in the
 // URL, like ?network does.
-const recBox = document.getElementById("rec");
+const controls = document.getElementById("controls");
 const recGo = document.getElementById("rec-go");
 const recLabel = document.getElementById("rec-label");
 const recTime = document.getElementById("rec-time");
 const recModeButtons = document.querySelectorAll("#rec-mode button");
+const recBgButtons = document.querySelectorAll("#rec-bg button");
 const recordHint = document.getElementById("record-hint");
 let recordMode = new URLSearchParams(location.search).get("record") === "screen"
   ? "screen" : "device";
+// Behind the device in a device recording. Nothing is behind the screen alone.
+let recordBg = new URLSearchParams(location.search).get("recbg") === "light"
+  ? "light" : "dark";
 let recording = null;     // the recording in progress, once it has started
 let recBusy = false;      // starting or finishing, when the button must wait
 let recFrom = 0, recTick = 0;
@@ -671,23 +888,40 @@ function showRecordMode() {
   for (const button of recModeButtons) {
     button.setAttribute("aria-pressed", String(button.dataset.mode === recordMode));
   }
+  for (const button of recBgButtons) {
+    button.setAttribute("aria-pressed", String(button.dataset.bg === recordBg));
+    button.disabled = recordMode === "screen" || !!recording || recBusy;
+  }
 }
 showRecordMode();
 
 // Asked of the shell that is up, since the two devices film at different sizes.
 function offerRecording() {
   if (!ISOLATED || !window.SimRecorder || !shell) return;
-  SimRecorder.supported(shell.width, shell.height)
-    .then((ok) => { if (ok) recBox.classList.add("offered"); }, () => {});
+  const size = SimRecorder.frameSize(shell);
+  SimRecorder.supported(size.width, size.height)
+    .then((ok) => { if (ok) controls.classList.add("rec-offered"); }, () => {});
+}
+
+function keepInUrl(name, value) {
+  const url = new URL(location.href);
+  url.searchParams.set(name, value);
+  history.replaceState(history.state, "", url);
 }
 
 for (const button of recModeButtons) {
   button.addEventListener("click", () => {
     recordMode = button.dataset.mode;
     showRecordMode();
-    const url = new URL(location.href);
-    url.searchParams.set("record", recordMode);
-    history.replaceState(history.state, "", url);
+    keepInUrl("record", recordMode);
+    button.blur();
+  });
+}
+for (const button of recBgButtons) {
+  button.addEventListener("click", () => {
+    recordBg = button.dataset.bg;
+    showRecordMode();
+    keepInUrl("recbg", recordBg);
     button.blur();
   });
 }
@@ -696,9 +930,12 @@ function showRecording() {
   const on = !!recording;
   recGo.setAttribute("aria-pressed", String(on));
   recGo.disabled = recBusy;
-  recLabel.textContent = recBusy ? (on ? "Saving" : "Starting") : on ? "Stop" : "Rec";
-  recGo.title = on ? "Stop recording and save the MP4" : "Start recording";
+  recLabel.textContent = recBusy ? (on ? "Saving the recording" : "Starting to record")
+                      : on ? "Stop recording and save the MP4" : "Start recording";
+  recGo.title = recLabel.textContent;
+  recGo.setAttribute("aria-label", recLabel.textContent);
   for (const button of recModeButtons) button.disabled = on || recBusy;
+  showRecordMode();
   clearInterval(recTick);
   recTick = 0;
   if (on) {
@@ -742,7 +979,7 @@ recGo.addEventListener("click", () => {
     recBusy = true;
     showRecording();
     SimRecorder.start({
-      mode: recordMode, screen: canvas, device: () => shell,
+      mode: recordMode, background: recordBg, screen: canvas, device: () => shell,
       onError: recordingFailed,
     }).then((started) => {
       recording = started;
@@ -762,25 +999,6 @@ recGo.addEventListener("click", () => {
     saveRecording(blob, recordingName(finishing.mode));
   }, (error) => recordingFailed(error.message));
 });
-
-// Which device: the firmware lays its screens out for the panel at boot, so the
-// other size means starting it again, and whatever this session had loaded goes
-// with it. Asked first, then the page reloads with ?display, keeping the rest.
-const displayButtons = document.querySelectorAll("#display-size button");
-for (const button of displayButtons) {
-  button.setAttribute("aria-pressed", String(button.dataset.display === DISPLAY));
-  button.addEventListener("click", () => {
-    button.blur();
-    const wanted = button.dataset.display;
-    if (wanted === DISPLAY) return;
-    const ok = confirm(`Switch to the ${wanted.replace("x", "×")} device? The firmware `
-                     + "restarts, and anything loaded in this session is lost.");
-    if (!ok) return;
-    const url = new URL(location.href);
-    url.searchParams.set("display", wanted);
-    location.assign(url);
-  });
-}
 
 function cameraSource() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {

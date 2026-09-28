@@ -103,17 +103,24 @@ needs editing too.
 **Works.** The full menu tree, seed loading by QR or by hand, passphrases, xpub
 export, PSBT signing, SeedQR backup, settings, every QR screen. Both screens the
 firmware drives: the SeedSigner Plus at 320×240, or the original Waveshare hat at
-240×240 (the switch under the device, or `?display=240x240`).
-**Rec** saves an MP4 of the session, the screen alone at its own size or the
-whole device, composed from the firmware's frames in the browser, so the pointer
-is never in it.
+240×240 (the device button, or `?display=240x240`).
+Recording saves an MP4 of the session: the screen alone at its own size, or the
+whole device centred on a dark or light background (`?recbg=light`). It is
+composed from the firmware's frames in the browser, so the pointer is never in it.
+
+Every control sits in one bar under the device: device, record, recording
+settings, and on a phone, fullscreen. A phone is landscape-first: held upright,
+the whole page is drawn turned sideways so it reads right with the phone
+turned; fullscreen gives the device the whole screen for the biggest keys.
 
 The firmware's own animation threads run too: the spinner, pulsing warning
 edges, scrolling labels, the PSBT overview's animation, animated QRs and the
-camera preview, each taking turns with the firmware on a single thread.
+camera preview, each taking turns with the firmware on a single thread. Toast
+threads run the same way and close on a key press, though stock firmware only
+raises the microSD toasts, so none appear here.
 
-**Does not.** No microSD, so settings reset on reload and firmware update is gone.
-No toasts. The spinner holds still through a single long computation, such as
+**Does not.** No microSD, so settings reset on reload, firmware update is gone
+and no toast is ever shown. The spinner holds still through a single long computation, such as
 the PBKDF2 that turns a mnemonic into a seed, then carries on. No timing, so no wipe timer,
 screensaver or battery reading.
 

@@ -28,7 +28,7 @@ everything against it, and stops the server afterwards. The first run also
 downloads the Pyodide runtime and builds the firmware zip from its pinned upstream
 commit, which takes a few minutes; later runs reuse all of it.
 
-A subset, by substring on the step name -- the names are `leak_scan`, `device`, `record`, `threads`,
+A subset, by substring on the step name -- the names are `leak_scan`, `device`, `record`, `threads`, `toasts`,
 `build_info`, `settings`, `scan_seedqr`, `scan_compact`, `scan_native`,
 `camera_stall`, `passphrase`, `image_entropy`, `mainnet`:
 
@@ -66,8 +66,8 @@ layout, and a human checking that once does not scale to every future commit.
 Public URLs are deliberately untouched. The allowlist is at the top of the file
 and every entry says why it is there.
 
-**`test_device.py`**: the device art as a control, on a phone. Two claims, and
-neither of them needs the firmware, so this file costs seconds.
+**`test_device.py`**: the device art as a control, and the page laid out for a
+phone. None of it needs the firmware, so this file costs seconds.
 
 The screen is not a button. It used to be the select key, on the grounds that it
 is the biggest target on the shell, and on a phone that meant a tap anywhere on
@@ -80,29 +80,73 @@ synthesises afterwards would count -- a finger held for two seconds still counts
 one, because a hardware button does not repeat, and two fingers landing together
 count one.
 
-Then the size of those keys. A landscape shell fitted to a 360 pixel phone draws
-them 21 pixels across, which is not a thumb target, so the page offers the device
-the whole viewport and lays it along the phone's long side: upright it is turned
-across the screen, sideways it is height-bound, and the keys are about 46 pixels
-either way. Both orientations are checked and photographed, along with the
-firmware's own screen staying 4:3 and unstretched in both, since what the scan
-tests compare is that canvas.
+The 240x240 hat gets the same treatment: the same eight keys, each tap exactly
+one press of its own key, and its square screen no control either.
+
+Then the page on a phone, which is landscape-first. Held upright, the whole page
+is drawn turned a quarter, so the test checks it lies that way, that title,
+warning, device and control bar still come in that order down the page (read in
+the page's own coordinates, which run across the screen when it is turned), that
+the bar's buttons are 44 pixels, and that a tap through the rotation lands on the
+key under the finger. Held sideways, the page is not turned, turning is not
+taken as a request for fullscreen, and title, warning, device and bar all fit on
+one screen without scrolling. Fullscreen gives the device the whole page for the
+biggest keys, over 44 pixels in both orientations and for both devices, with room
+between neighbouring keys, and the firmware's own screen stays 4:3 and
+unstretched throughout, since what the scan tests compare is that canvas.
 
 **`test_build_info.py`**: the **i** panel, and the one check the page
 makes about itself. The panel is where a visitor is told what is running, so
 every value in it is compared here against something that is not the panel's own
-source: the tag, the commit and both hashes against `UPSTREAM`, the Pyodide
-version against `build/fetch-assets.sh`, and the dependency list against the
-licences manifest inside the built zip. The sha256 the panel shows for the zip
+source: the tag, the commit and both hashes against `UPSTREAM`, and the Pyodide
+version against `build/fetch-assets.sh`. The sha256 the panel shows for the zip
 the page received is the worker's hash of the bytes it fetched, so it is compared
-against the zip on disk.
+against the zip on disk. When the two match, the panel says nothing more: the
+hashes sit side by side for anyone to compare.
 
 Then the part that makes it a check rather than a decoration: a copy of the zip
 with one byte appended is served from a second server, in front of the real one,
-and the panel has to say the two hashes differ and show the altered file's own
-hash. `build/out` is never touched, so there is nothing to put back if this fails
-halfway. The limitation line is asserted too, because a page that quietly stopped
-saying the self-check is not proof would be claiming more than it can.
+and the panel has to say, in red, that the two hashes differ, and show the
+altered file's own hash. `build/out` is never touched, so there is nothing to put
+back if this fails halfway.
+
+**`test_record.py`**: the record button hands back an MP4, framed as asked, on
+both devices. The screen alone has to come out at exactly the firmware's own
+size, 320x240 or 240x240. The whole device, on a dark and on a light background,
+has to come out centred, with the same padding across as down -- a little of it,
+between 4 and 12 percent of the shell's height, not the art's own uneven room for
+a drop shadow -- at an even size, since H.264 will not take an odd one. Sizes are
+read out of the file's own track header, and the shell's size out of a second
+device the test draws, never out of what the recorder says. Lengths are checked
+loosely against how long the recording ran. The mouse is left over a key the
+whole time: the video is composed from the firmware's canvas and a snapshot of
+the drawn shell, so no pointer or hover glow can reach it. The 240x240 pass ends
+on switching devices, which restarts the firmware and so asks first, in the
+device panel: Cancel keeps the session, Switch reloads at the other size. A
+Chromium without an H.264 encoder cannot make any of these; there the check is
+that recording is never offered, and the file checks are skipped, not failed.
+
+**`test_threads.py`**: SeedSigner's own animation threads, running as green
+threads, and the firmware still answering while they do. The camera preview is
+`LivePreviewThread` and keeps up; a warning pulses with nobody touching anything;
+an animated QR advances by itself on a screen that only waits for a key, and
+Down and Up make its background darker and brighter (which also proves the
+`qrencode` stand-in honours `--background`); the spinner starts as a green thread
+when an xpub is derived; every thread ends when its screen closes; none failed
+to be rewritten. Every key press in the flow has to reach the screen within 1.5
+seconds, because a thread taking its turns must never keep the firmware from the
+lock it needs to draw. Timings are taken inside the page, from when each frame
+was painted, not from this process's polling of the log.
+
+**`test_toasts.py`**: toasts, which stock firmware only raises for a microSD card
+the simulator does not have, so no toast ever appears in the page and there is
+no way into a running worker to raise one. So this runs outside the browser, in
+plain Python: the firmware's own `BaseToastOverlayManagerThread.run()`, lifted
+out of the built zip as it stands, rewritten and scheduled by
+`browser_threads.py` exactly as the worker would, around a stand-in screen and
+buttons. A key closes a toast promptly, putting the screen back first; with no
+key it goes when its time is up; a key during its delay cancels it before it is
+drawn. Seconds, and no server.
 
 **`test_settings.py`**: a setting changed through the firmware's own menus, and the
 network indicator that follows it. Changing a setting once died on a System

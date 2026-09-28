@@ -49,19 +49,19 @@
 
 419e71e80569f53e0f3771047665ef2aaddc4de9296b708b851cad5c409ed9e2  src/shims/browser_camera.py
 d35ca8a3d833eb5ab9dc08a9b04199203067bc8f3a14289563f484c0e4b35bac  src/shims/browser_display.py
-fae90c7cf96d5fd4ccf3200eaa7d2d324c589cf5462083fb8f459730c8890d89  src/shims/browser_threads.py
+a095b4fd85aab4528a667f400c72df80f75bc785850d0a96c796a8023e513379  src/shims/browser_threads.py
 0243ccf633097906b763839cd4b2d9f92fccd042bac1fd11ee7be60f31e78687  src/web/apple-touch-icon.png
 f1c3ac9e7be514f81a8140c908efba0d2c3bc0188b5b51d31d67693323f65770  src/web/camera.js
 1ebb8267bb112587c9739a7f30fd9197c3e0137a0fcd4677f6a8677b6fa307f5  src/web/icon-192.png
 2c740b578143c67bbca1f950c33fe62d2a06fd22d5c0a7adf58348dc648e09bf  src/web/icon-512.png
-80f49deb9a6c7cf6bc287b81c5709b9b0f3c043bff2d68eba86b3534c498a3b0  src/web/index.html
+4b8c2d023cc796a18adecf4bb45b3d20e2175271e26a825c11c8c1031c19997d  src/web/index.html
 bc40c8a15196236b2314db0856f72ca0b49980cd5413b8c852a7349f5fee0859  src/web/jsQR.js
-4bcc8909e9a11cd83770136548614956ad48603254a4d25c184baa538877a648  src/web/manifest.json
+b8dcd3c304b490bd065ffc93d15a89e045abd473e17f694091605f8becb25904  src/web/manifest.json
 cc4d30bd20b9ffe0b15f59cf0de3e1930626ccd46a5146e36e4d619d7fecf63d  src/web/mp4-muxer.js
-7ae156dcec916b86f4e6025559c559ac0ded9efd60d6f18eac4141dd35b2e84b  src/web/recorder.js
-a6d5cbbf43f68d3ac5ba5bb907c0369fa368e88e3402461f7577503144b78593  src/web/seedsigner-device.js
+e7e57bcc34bff30415ed877a236791fd8dab77b888d7ab059cb3c0e7b6353997  src/web/recorder.js
+1afbf4c43ff24ce9591d82bfc01078db992dc1341c8bdbd234b4150d2fa7509d  src/web/seedsigner-device.js
 9bb91f55e9aa70253b6c4a7c8ed4296aff43629bcb9f20bc5c7ff1eb061a06e7  src/web/sw.js
-c3d9abbfdcad2a0971e132a023e218b03d7c3f37200d460bc2fb09e781d8a60d  src/web/worker.js
+1b9bc09a8c805c1912a0ff76480a1cbbee3dcc128c333933449582329a1dc5ad  src/web/worker.js
 
 # The stand-in packages, which build/build-firmware-zip.sh copies out of the working
 # tree and into a firmware zip whole. Every other input to that zip is pinned by a

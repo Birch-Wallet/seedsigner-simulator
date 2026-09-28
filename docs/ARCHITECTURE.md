@@ -275,9 +275,17 @@ pycryptodome; the spinner holds still for that call and then carries on.
 
 Which threads run this way is a list in the shim: the spinner, address
 verification's progress, the warning edge, scrolling text, the PSBT overview,
-`QRDisplayThread` and `LivePreviewThread`. Toasts and the microSD watcher are
-still dropped. `BackgroundImportThread` and the address search still run inline
-on `start()`, as they always have.
+`QRDisplayThread` and `LivePreviewThread`, plus every toast (any subclass of
+`BaseToastOverlayManagerThread`). A toast holds the renderer's lock while it is
+up and lets go when its time is up or a key goes down, which it learns from
+`HardwareButtons.has_any_input()`. On hardware that reads the GPIO pins; here a
+press is an event that `wait_for` has usually taken before the toast looks, so a
+key counts as down while a press is waiting or for 0.3s after one was taken.
+Stock firmware only raises the microSD toasts, and there is no card here, so
+none appear yet; `test_toasts.py` runs the firmware's own toast `run()` under the
+scheduler to check the mechanism. The microSD watcher itself is still dropped.
+`BackgroundImportThread` and the address search still run inline on `start()`,
+as they always have.
 
 One consequence for input: a screen showing a code ignores presses for a moment
 after it opens, and the queue is emptied as it opens. The press that opened it,
@@ -307,10 +315,16 @@ Raspberry Pi. These are small, but each one is a hard failure without it:
   a mnemonic to seed bytes, so without it loading any seed at all fails. pycryptodome's
   PBKDF2 is borrowed rather than hand-rolling the derivation.
 - **No processes.** Several helpers shell out to a faster native tool and fall back
-  to pure Python when the binary is missing; `qr.py` does it with `qrencode`.
-  Emscripten raises `OSError` where those fallbacks catch `FileNotFoundError`, so
-  `subprocess` is patched to report the binary as absent, which is both true here
-  and the case they already handle.
+  to pure Python when the binary is missing. Emscripten raises `OSError` where
+  those fallbacks catch `FileNotFoundError`, so `subprocess` is patched to report
+  a binary as absent, which is both true here and the case they already handle.
+  The exception is `qrencode`, which `qr.py` calls to draw every QR the firmware
+  shows. Its fallback drops the background colour it was asked for, so every QR
+  came out on the same grey and the QR screens' brighter/darker keys did
+  nothing; on a device `qrencode` is there and that fallback never runs. So that
+  one command is carried out in the worker with the `qrcode` library already in
+  the zip -- the same margin, module size, error correction and colours, written
+  to the PNG `qr.py` reads -- and upstream stays on the path a device takes.
 - **No OpenCV, no numpy.** `decode_qr` imports numpy inside a `try` that starts
   with `import cv2`, and opencv is not loaded, so `np` is `None` either way. The
   browser decode is what makes that harmless.

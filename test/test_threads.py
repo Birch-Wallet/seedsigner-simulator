@@ -10,7 +10,7 @@ green threads now. What is checked here is what a visitor would see:
 - **A warning pulses** with nobody touching anything: two captures of the
   canvas half a second apart are different pictures.
 - **An animated QR advances by itself** on a screen that is only waiting for
-  a key.
+  a key, and Down and Up make its background darker and brighter.
 - **The spinner** is started as a green thread when the xpub is derived.
 - **Every key press is answered promptly** while all of that runs: a thread
   taking its turns must never keep the firmware from the lock it needs to draw
@@ -65,6 +65,22 @@ def line_time(page, pattern, after=0.0):
 def frames_between(page, start, end):
     return page.evaluate("([a, b]) => window.__frames.filter(t => t > a && t < b).length",
                          [start, end])
+
+
+def backdrop(page):
+    """The grey behind a QR on screen: the commonest colour that is not black."""
+    return page.evaluate("""() => {
+      const c = document.getElementById('screen');
+      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      const counts = {};
+      for (let i = 0; i < d.length; i += 4) {
+        if (d[i] === 0 && d[i + 1] === 0 && d[i + 2] === 0) continue;
+        if (d[i] !== d[i + 1] || d[i] !== d[i + 2]) continue;
+        counts[d[i]] = (counts[d[i]] || 0) + 1;
+      }
+      const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+      return top ? Number(top[0]) : null;
+    }""")
 
 
 def capture(page):
@@ -175,6 +191,21 @@ def main() -> int:
         check("drawn by SeedSigner's own QRDisplayThread",
               log.seen(r"thread start: QRDisplayThread kind=green") is not None)
         page.wait_for_timeout(1600)     # past the screen's deaf moment
+
+        # Down and Up set the code's background darker and brighter. The
+        # brightness reaches the image through qr.py's qrencode call, so this
+        # is also the check that the qrencode stand-in honours --background.
+        start = backdrop(page)
+        press(page, "ArrowDown")
+        page.wait_for_timeout(1600)     # past the brightness tip
+        darker = backdrop(page)
+        check("Down makes the code's background darker",
+              darker is not None and start is not None and darker < start,
+              f"{start} -> {darker}")
+        press(page, "ArrowUp")
+        page.wait_for_timeout(1600)
+        check("and Up brings it back", backdrop(page) == start, f"{darker} -> {backdrop(page)}")
+
         window = log.mark()
         press(page, "Enter")
         page.wait_for_timeout(1500)

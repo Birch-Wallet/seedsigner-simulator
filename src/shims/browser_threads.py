@@ -59,6 +59,15 @@ GREEN = {
     "LivePreviewThread",            # the camera preview while scanning
 }
 
+# Green too, and every subclass of them. A toast holds the renderer's lock for
+# as long as it is up and lets go when its time is up or a key goes down
+# (HardwareButtons.has_any_input). Stock firmware only raises the microSD ones,
+# and there is no card here, so none appear yet; a firmware that raises others
+# gets them working.
+GREEN_BASES = {
+    "BaseToastOverlayManagerThread",
+}
+
 # One-shots that happen to be BaseThreads, run to completion on start().
 #
 # The controller blocks waiting for BackgroundImportThread to set up storage, and
@@ -467,7 +476,7 @@ class GreenThread:
         name = type(self).__name__
         if name in RUN_INLINE_ANYWAY or not hasattr(self, "keep_running"):
             return "inline"
-        if name in GREEN:
+        if name in GREEN or any(c.__name__ in GREEN_BASES for c in type(self).__mro__):
             return "green"
         return "drop"
 

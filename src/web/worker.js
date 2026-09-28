@@ -278,7 +278,55 @@ def _no_such_binary(*args, **kwargs):
 def _failed_call(*args, **kwargs):
     return 1
 
-subprocess.call = _failed_call
+# Except qrencode, which is answered here rather than reported missing.
+#
+# qr.py's fallback for a missing qrencode drops the background colour it was
+# asked for, so every QR came out on qrimage()'s default #444 whatever the
+# brightness: Up and Down on a QR screen showed the brightness tip and changed
+# nothing. On a device qrencode is there and that fallback never runs. So the
+# one command qr.py sends is carried out with the qrcode library already in the
+# zip -- same margin, module size, error correction and colours, the same PNG
+# where qr.py reads it -- and upstream stays on the path a device takes.
+import shlex
+
+_QR_LEVELS = {"L": 1, "M": 0, "Q": 3, "H": 2}   # qrcode.constants.ERROR_CORRECT_*
+
+def _qrencode(argv):
+    import qrcode
+    options = {"-m": "4", "-s": "3", "-l": "L", "-t": "PNG", "-o": None}
+    colours = {"--foreground": "000000", "--background": "ffffff"}
+    data = None
+    words = iter(argv[1:])
+    for word in words:
+        if word in options:
+            options[word] = next(words, None)
+        elif word.split("=", 1)[0] in colours and "=" in word:
+            name, value = word.split("=", 1)
+            colours[name] = value
+        else:
+            data = word
+    if data is None or options["-o"] is None or options["-t"] != "PNG":
+        return 1
+    try:
+        qr = qrcode.QRCode(error_correction=_QR_LEVELS.get(options["-l"].upper(), 1),
+                           box_size=int(options["-s"]), border=int(options["-m"]))
+        qr.add_data(data)
+        qr.make(fit=True)
+        image = qr.make_image(fill_color="#" + colours["--foreground"],
+                              back_color="#" + colours["--background"])
+        image.save(options["-o"])
+    except Exception as exc:
+        js_log(f"qrencode stand-in failed: {type(exc).__name__}: {exc}")
+        return 1
+    return 0
+
+def _call(cmd, *args, **kwargs):
+    argv = shlex.split(cmd) if isinstance(cmd, str) else list(cmd)
+    if argv and argv[0] == "qrencode":
+        return _qrencode(argv)
+    return 1
+
+subprocess.call = _call
 for _name in ("run", "check_call", "check_output", "Popen"):
     setattr(subprocess, _name, _no_such_binary)
 
@@ -332,6 +380,9 @@ import time as _clock
 
 _deaf_until = [0.0]
 
+# When a key was last taken, for has_any_input below.
+_key_taken_at = [-1.0]
+
 def _wait_for(self, keys=[]):
     js_log(f'wait_for keys={keys!r}')
     while True:
@@ -339,6 +390,7 @@ def _wait_for(self, keys=[]):
         index = js_peek_key()
         if index < 1 or index >= len(BUTTON_VALUES):
             continue
+        _key_taken_at[0] = _clock.monotonic()
         if _clock.monotonic() < _deaf_until[0]:
             js_log(f'key index={index} dropped: the screen is still opening')
             continue
@@ -369,6 +421,7 @@ def _check_for_low(self, key=None, keys=None):
     index = js_peek_key()
     if 1 <= index < len(BUTTON_VALUES):
         _PENDING_KEYS.append([BUTTON_VALUES[index], 0])
+        _key_taken_at[0] = _clock.monotonic()
 
     wanted = list(keys) if keys else ([key] if key is not None else [])
     for entry in _PENDING_KEYS:
@@ -385,7 +438,17 @@ HardwareButtons.get_instance = classmethod(_get_instance)
 HardwareButtons.wait_for = _wait_for
 HardwareButtons.update_last_input_time = _update_last_input_time
 HardwareButtons.check_for_low = _check_for_low
-HardwareButtons.has_any_input = lambda self: False
+# Whether a button is down right now. On hardware that is a read of the GPIO
+# pins, and it stays true for as long as a finger is on the key; a toast polls
+# it to know when to get out of the way. Here a press is an event, and wait_for
+# has usually taken it before the toast next looks, so "down" is a press still
+# waiting or one taken in the last moment -- about as long as a press lasts.
+_KEY_DOWN_S = 0.3
+
+def _has_any_input(self):
+    return bool(js_key_pending()) or _clock.monotonic() - _key_taken_at[0] < _KEY_DOWN_S
+
+HardwareButtons.has_any_input = _has_any_input
 HardwareButtons.trigger_override = lambda self, force_release=False: None
 
 # --- the camera, and the QR decode, both come from the page -------------------

@@ -18,13 +18,19 @@ the DevTools protocol -- a tap on the screen has to count nothing, a tap on a
 key has to count exactly one, and a finger held on a key has to keep counting
 one, because a hardware button does not repeat either.
 
-**The shell can have the screen.** A landscape device fitted to a portrait
+**Landscape, always, on a phone.** A landscape device fitted to a portrait
 phone's width draws keys about 23 pixels across, which is not a thumb target.
-The page offers a mode where the device takes the whole viewport, fitted to its
-height as well as its width, so that turning the phone sideways is what makes
-the keys big. This checks both halves of that, in both orientations, and that
-the firmware's own 320x240 screen keeps its shape throughout, since the tests
-that compare it are comparing pixels.
+So a phone held upright gets the whole page drawn turned a quarter, reading
+right with the phone on its side, and on its side it is simply the page, with
+title, warning, device and control bar on one screen. Checked in both
+orientations: which way the page lies, that nothing is off the screen, how big
+the keys and the bar's buttons come out, and that a tap on a drawn key still
+lands on that key through the rotation.
+
+**The shell can have the screen.** Fullscreen gives the device the whole page
+for the biggest keys. This checks it in both orientations, and that the
+firmware's own 320x240 screen keeps its shape throughout, since the tests that
+compare it are comparing pixels.
 """
 
 import os
@@ -58,6 +64,45 @@ PROBE = """
 """
 
 
+def rotated(page):
+    return page.evaluate("() => document.body.classList.contains('rotated')")
+
+
+def on_page(page, selector):
+    """A box in the page's own coordinates, top to bottom, whether or not the
+    page is drawn turned. Turned, the page's top edge runs down the screen's
+    right-hand side, so its "down" is the screen's leftward."""
+    box = page.locator(selector).bounding_box()
+    if not rotated(page):
+        return {"top": box["y"], "bottom": box["y"] + box["height"]}
+    width = page.evaluate("() => document.documentElement.clientWidth")
+    return {"top": width - (box["x"] + box["width"]), "bottom": width - box["x"]}
+
+
+# As on iOS, which has no fullscreen API: what is checked here is the page's
+# own fullscreen, and a window the browser has made fullscreen cannot be
+# resized to turn the phone round.
+NO_BROWSER_FULLSCREEN = """
+Element.prototype.requestFullscreen = () => Promise.reject(new Error("no fullscreen here"));
+"""
+
+
+# Which keys go down, as the page's own art shows them.
+WATCH_DOWNS = """
+() => {
+  window.__downs = [];
+  new MutationObserver((changes) => {
+    for (const change of changes) {
+      if (change.target.classList.contains("ssd-down")) {
+        window.__downs.push(change.target.dataset.ssdControl);
+      }
+    }
+  }).observe(document.querySelector("#device .ssd-svg"),
+             { subtree: true, attributes: true, attributeFilter: ["class"] });
+}
+"""
+
+
 def centre(page, selector):
     box = page.locator(selector).bounding_box()
     return box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
@@ -75,25 +120,61 @@ def main() -> int:
         page = context.new_page()
         errors = []
         page.on("pageerror", lambda e: errors.append(str(e)))
+        page.add_init_script(NO_BROWSER_FULLSCREEN)
         page.goto(harness.sim_url())
         page.wait_for_selector("#device .ssd-svg")
 
-        # --- the order of the page, top to bottom ----------------------------
-        # The title, then the warning, then the device. Read off the rendered
-        # boxes rather than off the source order, because either one can be
-        # moved without the other. The warning is the point: a sentence saying
-        # not to type a real seed has to be read before the keyboard is.
+        # --- held upright: the page lies on its side -------------------------
+        check("a phone held upright gets the page turned to landscape",
+              rotated(page), page.evaluate("document.body.className"))
         title = page.locator("h1").bounding_box()
-        warn = page.locator("p.warn").bounding_box()
-        device = page.locator("#device").bounding_box()
-        check("the title is above the simulator warning",
-              title["y"] + title["height"] <= warn["y"],
-              f"title ends at {int(title['y'] + title['height'])}, "
-              f"warning starts at {int(warn['y'])}")
-        check("the simulator warning sits above the device",
-              warn["y"] + warn["height"] <= device["y"],
-              f"warning ends at {int(warn['y'] + warn['height'])}, "
-              f"device starts at {int(device['y'])}")
+        check("so the title runs down the screen rather than across it",
+              title["height"] > title["width"],
+              f"{int(title['width'])}x{int(title['height'])}")
+
+        # --- the order of the page, top to bottom ----------------------------
+        # The title, then the warning, then the device, then the controls. Read
+        # off the rendered boxes rather than off the source order, because
+        # either one can be moved without the other, and in the page's own
+        # coordinates, so it holds with the page turned. The warning is the
+        # point: a sentence saying not to type a real seed has to be read
+        # before the keyboard is.
+        def in_order(where):
+            title = on_page(page, "h1")
+            warn = on_page(page, "p.warn")
+            device = on_page(page, "#device")
+            bar = on_page(page, "#controls")
+            # On a short page the title and the warning share a line, which is
+            # still before the device.
+            check(f"{where}: the title is not below the simulator warning",
+                  title["top"] < warn["bottom"],
+                  f"title at {int(title['top'])}, warning at {int(warn['top'])}")
+            check(f"{where}: the simulator warning sits above the device",
+                  warn["bottom"] <= device["top"],
+                  f"warning ends at {int(warn['bottom'])}, device starts at {int(device['top'])}")
+            check(f"{where}: and the control bar is under the device",
+                  device["bottom"] <= bar["top"],
+                  f"device ends at {int(device['bottom'])}, bar starts at {int(bar['top'])}")
+
+        in_order("upright")
+        sizes = [min(b["width"], b["height"]) for b in
+                 (page.locator(f"#controls {sel}").bounding_box()
+                  for sel in ("#ctl-device", "#fullscreen"))]
+        check("upright: the bar's buttons are thumb targets", min(sizes) >= 44,
+              ", ".join(f"{v:.0f}px" for v in sizes))
+        upright_key = min(page.locator("#device [data-ssd-control=select]").bounding_box()[k]
+                          for k in ("width", "height"))
+        check("upright: the device's keys are near thumb size in the page",
+              upright_key >= 36, f"{upright_key:.0f}px")
+
+        # A tap through the rotation lands on the key under the finger.
+        page.evaluate(WATCH_DOWNS)
+        x, y = centre(page, "#device [data-ssd-control=up]")
+        page.touchscreen.tap(x, y)
+        page.wait_for_timeout(60)
+        check("upright: a tap on a drawn key presses that key",
+              page.evaluate("() => window.__downs") == ["up"],
+              str(page.evaluate("() => window.__downs")))
 
         # --- the screen is not a button --------------------------------------
         page.evaluate(PROBE)
@@ -203,8 +284,6 @@ def main() -> int:
                     / min(box["width"], box["height"]))
 
         in_page = key_size()
-        check("a key in the page is nowhere near a thumb target", in_page < 30,
-              f"{in_page:.0f}px at {PHONE['width']}px wide")
         check("the fullscreen control is offered on a phone",
               page.locator("#fullscreen").is_visible())
         page.locator("#fullscreen").click()
@@ -218,7 +297,7 @@ def main() -> int:
               f"{PHONE['width']}x{PHONE['height']}")
         # 44 pixels is the smallest target every accessibility guideline agrees
         # a finger can be asked to hit.
-        check("which is what makes the keys thumb sized", key_size() >= 44,
+        check("which makes the keys bigger still", key_size() >= 44 and key_size() > in_page,
               f"{key_size():.0f}px, was {in_page:.0f}px in the page")
         check("the firmware's screen keeps its 4:3 shape, unstretched",
               abs(screen_shape() - 4 / 3) < 0.02, f"{screen_shape():.3f}")
@@ -258,6 +337,29 @@ def main() -> int:
         check("and so does the control that opened it",
               not page.evaluate("() => document.body.classList.contains('solo')")
               and page.locator("#fullscreen").get_attribute("aria-pressed") == "false")
+
+        # --- on its side: the page as it is, all of it on screen --------------
+        page.set_viewport_size(PHONE_SIDEWAYS)
+        page.wait_for_timeout(400)
+        check("turned sideways the page is not turned", not rotated(page))
+        check("and turning it is not taken as asking for fullscreen",
+              not page.evaluate("() => document.body.classList.contains('solo')"))
+        in_order("sideways")
+        bar = page.locator("#controls").bounding_box()
+        fits = page.evaluate("""() => {
+          const app = document.getElementById('app');
+          return app.scrollHeight <= app.clientHeight + 1
+              && document.documentElement.scrollWidth <= innerWidth + 1;
+        }""")
+        check("sideways: title, warning, device and bar all fit on one screen",
+              fits and bar["y"] + bar["height"] <= PHONE_SIDEWAYS["height"] + 1,
+              f"bar ends at {int(bar['y'] + bar['height'])} of {PHONE_SIDEWAYS['height']}")
+        sideways_key = key_size()
+        check("sideways: the device's keys are near thumb size in the page",
+              sideways_key >= 36, f"{sideways_key:.0f}px")
+        page.screenshot(path=harness.artifact("device-sideways-page.png"))
+        page.set_viewport_size(PHONE)
+        page.wait_for_timeout(300)
         check("focus went back to the page so the firmware keeps the keyboard",
               page.evaluate("document.activeElement === document.body"),
               page.evaluate("document.activeElement.tagName"))
@@ -268,15 +370,17 @@ def main() -> int:
               not page.locator("#fullscreen").is_visible())
         check("no page errors", not errors, "; ".join(errors[:3]))
 
-        # --- the 240x240 hat filling a sideways phone -------------------------
+        # --- the 240x240 hat filling a sideways phone, in fullscreen ----------
         # The same shell and keys as the Plus's, around a narrower screen, and
         # its keys have to come out as thumb targets with room between them too.
         hat = context.new_page()
+        hat.add_init_script(NO_BROWSER_FULLSCREEN)
         hat.set_viewport_size(PHONE_SIDEWAYS)
         hat.goto(harness.sim_url(display="240x240"))
         hat.wait_for_selector("#device .ssd-svg")
+        hat.locator("#fullscreen").click()
         hat.wait_for_timeout(600)
-        check("a sideways phone fills the screen with the hat too",
+        check("fullscreen on a sideways phone gives the hat the whole screen",
               hat.evaluate("() => document.body.classList.contains('solo')"))
 
         def box(name):

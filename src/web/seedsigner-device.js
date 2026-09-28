@@ -354,7 +354,8 @@
       '" rx="', n(w * 0.44), '" ry="', n(11 * u),
       '" fill="#000000" opacity=".7" filter="url(#', id, '-contact)"/>');
 
-    out.push('<path d="', outer, '" fill="', P.outline, '" filter="url(#', id, '-drop)"/>');
+    out.push('<path class="ssd-drop" d="', outer, '" fill="', P.outline,
+      '" filter="url(#', id, '-drop)"/>');
     out.push('<path', band, ' fill="', P.band, '"/>');
     out.push('<path', band, ' fill="url(#', id, '-chamV)"/>');
     out.push('<path', band, ' fill="url(#', id, '-chamH)"/>');
@@ -721,9 +722,18 @@
      *
      * Rasterised from a copy with its own stylesheet, so nothing on the page --
      * a hover, a key somebody is holding right now -- leaks into the picture.
+     * `options.shadow === false` leaves out the drop shadow.
      */
-    function snapshot(channel) {
+    function snapshot(channel, options) {
       var copy = svgEl.cloneNode(true);
+      // A recording frames the shell with a little even padding, too little for
+      // the drop shadow's soft reach below it. Without the blur the path is
+      // wholly covered by the rim and face, so only the shadow goes; the thin
+      // contact shadow under the shell stays.
+      if (options && options.shadow === false) {
+        var drops = copy.querySelectorAll(".ssd-drop");
+        for (var d = 0; d < drops.length; d++) drops[d].removeAttribute("filter");
+      }
       copy.setAttribute("width", n(L.viewW));
       copy.setAttribute("height", n(L.viewH));
       var held = copy.querySelectorAll(".ssd-down");
@@ -749,6 +759,9 @@
       snapshot: snapshot,
       screen: slotEl,
       screenRect: { x: n(L.screenX), y: n(L.screenY), width: n(L.sw), height: n(L.sh) },
+      // The shell itself, without the viewBox's padding, which is uneven: room
+      // for the drop shadow below. What a recording centres.
+      bodyRect: { x: n(L.bodyX), y: n(L.bodyY), width: n(L.bodyW), height: n(L.bodyH) },
       width: n(L.viewW),
       height: n(L.viewH),
     };

@@ -39,6 +39,7 @@ SUITE = [
     ("device", ["test_device.py"], True),
     ("record", ["test_record.py"], True),
     ("threads", ["test_threads.py"], True),
+    ("toasts", ["test_toasts.py"], False),
     ("build_info", ["test_build_info.py"], True),
     ("settings", ["test_settings.py"], True),
     ("scan_seedqr", ["test_scan.py"], True),

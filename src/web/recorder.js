@@ -20,8 +20,8 @@
   "use strict";
 
   // High, Main, Constrained Baseline, Baseline, all at level 4.0, which is the
-  // lowest that takes either shell: the Plus films at 2004x810, the hat at
-  // 1844x810. Firefox's encoder is OpenH264 and only does baseline, so the
+  // lowest that takes either shell: the Plus films at 2096x846, the hat at
+  // 1936x846. Firefox's encoder is OpenH264 and only does baseline, so the
   // list has to reach that far.
   var CODECS = ["avc1.640028", "avc1.4d0028", "avc1.42e028", "avc1.420028"];
 
@@ -29,10 +29,32 @@
   var KEYFRAME_US = 2e6;
   // The last frame has no next one to measure its duration against.
   var FRAME_US = 33333;
-  // The page's own background, under the shell's shadow and the spare even row.
-  var BACKDROP = "#0b0c0e";
+  // Behind the shell in a device recording: the page's own near-black, or white.
+  var BACKDROPS = { dark: "#0b0c0e", light: "#ffffff" };
+  // Padding around the shell in a device recording, as a share of its height:
+  // the same on every side, and enough for the contact shadow under it.
+  var MARGIN = 0.08;
 
   function even(v) { return Math.ceil(v / 2) * 2; }
+
+  /**
+   * The size of a device recording, and where the art goes in it: the shell
+   * centred, with even padding round it. The art's own viewBox is padded
+   * unevenly -- room for the drop shadow below -- so filming it as it stands
+   * leaves the shell sitting high in the frame.
+   */
+  function frameSize(shell) {
+    var body = shell.bodyRect;
+    var margin = Math.round(body.height * MARGIN);
+    var width = even(body.width + 2 * margin);
+    var height = even(body.height + 2 * margin);
+    return {
+      width: width,
+      height: height,
+      x: Math.round((width - body.width) / 2 - body.x),
+      y: Math.round((height - body.height) / 2 - body.y),
+    };
+  }
 
   function encoderAvailable() {
     return typeof global.VideoEncoder === "function"
@@ -56,8 +78,8 @@
     return next();
   }
 
-  // Whether this browser can film a device of this size; the screen alone is
-  // smaller and comes with it.
+  // Whether this browser can film a device recording of this size (see
+  // frameSize); the screen alone is smaller and comes with it.
   function supported(width, height) {
     return pickCodec(even(width), even(height), 5e6)
       .then(function (config) { return !!config; });
@@ -67,7 +89,9 @@
    * Start recording. `mode` is "screen" or "device". `screen` is the firmware's
    * canvas; `device` returns the shell on the page, which is read once: the page
    * only mounts a new one when the firmware reports a new screen size, and that
-   * is over before the first frame, which is before recording is offered. `onError` hears about an encoder that gave up.
+   * is over before the first frame, which is before recording is offered.
+   * `background` is "dark" or "light", for device recordings. `onError` hears
+   * about an encoder that gave up.
    *
    * Resolves to a recording with frame() and stop().
    */
@@ -77,11 +101,13 @@
     var onError = options.onError || function () {};
     var shell = options.device();
 
-    var width, height, art = null;
+    var backdrop = BACKDROPS[options.background] || BACKDROPS.dark;
+    var width, height, place = { x: 0, y: 0 }, art = null;
     if (mode === "screen") {
       width = screen.width; height = screen.height;
     } else {
-      width = even(shell.width); height = even(shell.height);
+      place = frameSize(shell);
+      width = place.width; height = place.height;
     }
     var bitrate = mode === "screen" ? 1e6 : 5e6;
 
@@ -135,11 +161,11 @@
         var down = svg && svg.querySelector(".ssd-down");
         var channel = down ? down.getAttribute("data-ssd-channel") : "";
         var r = shell.screenRect;
-        ctx.fillStyle = BACKDROP;
+        ctx.fillStyle = backdrop;
         ctx.fillRect(0, 0, width, height);
-        ctx.drawImage(art.under[channel] || art.under[""], 0, 0);
-        ctx.drawImage(screen, r.x, r.y, r.width, r.height);
-        ctx.drawImage(art.over, 0, 0);
+        ctx.drawImage(art.under[channel] || art.under[""], place.x, place.y);
+        ctx.drawImage(screen, place.x + r.x, place.y + r.y, r.width, r.height);
+        ctx.drawImage(art.over, place.x, place.y);
       }
 
       function encode(durationUs) {
@@ -210,7 +236,7 @@
     for (var name in global.SeedSignerDevice.CHANNEL) {
       channels.push(String(global.SeedSignerDevice.CHANNEL[name]));
     }
-    return Promise.all(channels.map(function (c) { return shell.snapshot(c); }))
+    return Promise.all(channels.map(function (c) { return shell.snapshot(c, { shadow: false }); }))
       .then(function (shots) {
         var under = {};
         for (var i = 0; i < channels.length; i++) under[channels[i]] = shots[i].under;
@@ -218,5 +244,5 @@
       });
   }
 
-  global.SimRecorder = { supported: supported, start: start };
+  global.SimRecorder = { supported: supported, start: start, frameSize: frameSize };
 })(typeof window !== "undefined" ? window : this);
