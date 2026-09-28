@@ -13,26 +13,16 @@ Stock SeedSigner reaches for two native libraries at module scope, with no
   library and there is no WebAssembly build of it.
 
 There is no GPIO and no zbar in a browser, and this repository does not patch
-the wallet, so the imports have to find something. `/wallet` is first on
+the firmware, so the imports have to find something. `/firmware` is first on
 `sys.path`, so a package of the right name at the top level of the zip is what
 they find.
 
-## Why here and not in src/smartcard
+## Only stand-ins
 
-`src/smartcard/` is a different kind of thing and lives in a different place for
-that reason. It is a working simulation: it answers real APDUs, holds real keys,
-and pysatochip runs against it unchanged, so it is part of what the smartcard
-firmware *does*. These two are the opposite. They are shaped exactly like the
-module the importer expects and no further, and if either one is ever reached at
-runtime, something is wrong: `browser_display.py` and the worker have replaced
-every button and panel path before `RPi.GPIO` could matter, and
-`browser_camera.py` replaces `DecodeQR.extract_qr_data`, which is the only
-function that would have called `pyzbar.decode`.
-
-## Firmware-conditional
-
-These two are staged into the stock zip only, and `src/smartcard/` into the
-smartcard zip only. Neither firmware carries the other's stand-ins: the fork
-guards its `pyzbar` import and identifies buttons by name rather than by GPIO
-pin, and stock has no card code at all. See the `STAGE_PACKAGES` rows in
-`build/build-wallet-zip.sh`.
+These are shaped exactly like the module the importer expects and no further,
+and if either one is ever reached at runtime, something is wrong:
+`browser_display.py` and the worker have replaced every button and panel path
+before `RPi.GPIO` could matter, and `browser_camera.py` replaces
+`DecodeQR.extract_qr_data`, which is the only function that would have called
+`pyzbar.decode`. Both are staged into the firmware zip by the `STAGE_PACKAGES`
+rows in `build/build-firmware-zip.sh`.

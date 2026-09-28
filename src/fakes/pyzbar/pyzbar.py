@@ -2,9 +2,9 @@
 Stand-in for pyzbar, so that stock SeedSigner's `from pyzbar import pyzbar`
 succeeds.
 
-pyzbar binds the zbar C library and there is no WebAssembly build of it. The
-smartcard fork wraps this same import in try/except and sets the name to None;
-stock does not, so the import has to find something.
+pyzbar binds the zbar C library and there is no WebAssembly build of it.
+Stock imports it at module scope with no try/except, so the import has to
+find something.
 
 decode() is never reached. It is called from exactly one place, DecodeQR's
 extract_qr_data, and browser_camera.py replaces that method: decoding happens in

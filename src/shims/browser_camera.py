@@ -41,8 +41,6 @@ _FRAME_WAIT_MS = 2000
 # prompt and it stays free.
 _START_WAIT_MS = 30000
 
-_last_frame = None
-
 
 def _to_bytes(js_array):
     """Copy a JS Uint8Array into Python bytes."""
@@ -73,12 +71,9 @@ def _start_video_stream_mode(self, resolution=(512, 384), framerate=12, format="
     the camera raises CameraConnectionError, which is the same error the picamera
     backend raises and which SeedSigner already routes to CameraConnectionErrorView.
     """
-    global _last_frame
-
     if self._video_stream is not None:
         self.stop_video_stream_mode()
 
-    _last_frame = None
     error = _js.start(_START_WAIT_MS)
     if error:
         raise CameraConnectionError(str(error))
@@ -86,26 +81,15 @@ def _start_video_stream_mode(self, resolution=(512, 384), framerate=12, format="
     self._video_stream = _BrowserVideoStream()
 
 
-def _read_video_stream(self, as_image=False, preview=False, greyscale=True):
+def _read_video_stream(self, as_image=False):
     """
     Return the most recent camera frame, parking until one arrives.
 
     Blocking here is what paces SeedSigner's scan loop; without it the loop would
     spin against a still image as fast as Python can run.
-
-    `greyscale` is ignored. It exists on the real camera to save CPU on a Pi Zero
-    by never building the colour frame, and the colour conversion has already
-    happened in the browser by the time a frame reaches this process.
     """
-    global _last_frame
-
     if self._video_stream is None:
         raise Exception("Must call start_video_stream_mode first.")
-
-    # The preview pump asks for the frame the decode pass just read, so hand back
-    # the cached one rather than parking for a second frame.
-    if preview and _last_frame is not None:
-        return _last_frame
 
     frame = _js.frame(_FRAME_WAIT_MS)
     if frame is None:
@@ -115,17 +99,13 @@ def _read_video_stream(self, as_image=False, preview=False, greyscale=True):
 
     # The real camera rotates by 90 degrees to undo how the sensor is mounted in
     # the case, plus whatever the user set. A getUserMedia stream arrives upright.
-    _last_frame = image
     return image
 
 
 def _stop_video_stream_mode(self):
-    global _last_frame
-
     if self._video_stream is not None:
         self._video_stream.stop()
         self._video_stream = None
-    _last_frame = None
     _js.stop()
 
 
@@ -151,8 +131,7 @@ def _start_single_frame_mode(self, resolution=(720, 480)):
     why "new seed from a photo" died on `No module named 'picamera'`: stock
     reaches for the single-frame API there and for the video stream nowhere
     near it, so patching only the stream left the whole flow on the real
-    picamera import. The fork does not use this API at all, which is why it
-    went unnoticed for as long as the fork was the firmware people booted.
+    picamera import.
 
     `resolution` is the caller's preference for a sensor this process does not
     own, exactly as in the stream case: the page negotiates its own with
@@ -263,9 +242,8 @@ def install(js_camera):
     Camera.read_video_stream = _read_video_stream
     Camera.stop_video_stream_mode = _stop_video_stream_mode
 
-    # The still half. Stock's image-entropy flow and its QR brightness setting
-    # are the callers; the fork has neither, so this was missing for as long as
-    # the fork was what booted.
+    # The still half. The image-entropy flow and the QR brightness setting are
+    # the callers.
     Camera.start_single_frame_mode = _start_single_frame_mode
     Camera.capture_frame = _capture_frame
     Camera.stop_single_frame_mode = _stop_single_frame_mode
@@ -291,18 +269,15 @@ def _install_preview_pump():
         camera = self.camera
         original_read = camera.read_video_stream
 
-        # The guard is what makes this safe on both firmwares. The fork's
-        # LivePreviewThread asks for its frame with preview=True, so the flag
-        # alone is enough to tell "the decode loop wants a frame" from "the
-        # preview does". Stock's read_video_stream is (self, as_image=False)
-        # with no preview keyword at all, so on stock the preview's own read
-        # looks exactly like the decode loop's and would pump the preview from
-        # inside the preview, for as deep as the recursion limit allows.
+        # The guard is what makes this safe. The preview reads through the same
+        # read_video_stream the decode loop does, so without it the preview's
+        # own read would pump the preview from inside the preview, for as deep
+        # as the recursion limit allows.
         drawing = {"active": False}
 
         def read_and_draw(*args, **kwargs):
             frame = original_read(*args, **kwargs)
-            if frame is not None and not kwargs.get("preview") and not drawing["active"]:
+            if frame is not None and not drawing["active"]:
                 drawing["active"] = True
                 try:
                     _pump_preview(self)

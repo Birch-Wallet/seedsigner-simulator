@@ -1,33 +1,19 @@
-// Runs the SeedSigner wallet in a Web Worker.
+// Runs the SeedSigner firmware in a Web Worker.
 //
-// The wallet blocks the CPU waiting for a button press, which would freeze the
+// The firmware blocks the CPU waiting for a button press, which would freeze the
 // page if it ran on the main thread. In a worker that is fine: the page stays
 // responsive, and input is handed over through a SharedArrayBuffer so the
 // worker's blocking loop can be woken without any change to SeedSigner itself.
 
-importScripts("pyodide-e24b45d3/pyodide.js", "wallet-camera.js", "wallet-cards.js");
+importScripts("pyodide-e24b45d3/pyodide.js", "camera.js");
 
 let pyodide = null;
 let keyBuffer = null; // Int32Array over SharedArrayBuffer: [state, keycode]
-let camera = null;    // the page's half of the camera channel, see wallet-camera.js
-let cards = null;     // the page's card tray, see wallet-cards.js
+let camera = null;    // the page's half of the camera channel, see camera.js
 let debug = false;    // ?debug=1 on the page; otherwise js_log says nothing
 
-// Which of the two built wallet zips to unpack. The page decides; see
-// FIRMWARES in wallet.html for what the names mean and how one is chosen.
-let firmware = "smartcard";
-// "M" mainnet or "T" testnet — matches SettingsConstants in the wallet zip.
+// "M" mainnet or "T" testnet — matches SettingsConstants in the firmware zip.
 let bitcoinNetwork = "T";
-
-// PSBTv2 silent-payment send used to verify the embit overlay in Doomsigner.
-const SP_SEND_REF_B64 = (
-  "cHNidP8BAgQCAAAAAQQBAQEFAQIBBgEDAfsEAgAAAAABAR9QwwAAAAAAABYAFNDEo+8J6Ze26Z45flGP4+QaEYyh"
-  + "AQMEAQAAACIGAuerJTe11J6XAwmq4G6eSfNs4cn+u9ROyODRzKC0+cMZGHPF2gpUAACAAQAAgAAAAIAAAAAAAAAAAAE"
-  + "OIKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqAQ8EAAAAAAEQBP7///8AAQMIQJwAAAAAAAABCUICWTKHbNif"
-  + "lwZh86L1fMDc+ZVZCwzyoMTz5yfJnPGDo6ICp5k9NUvvmYv5X22Y0MDnOu8TtBXJYBOB6w9XV6HXlTQAIgIDXUnszVTQC"
-  + "Z5DZ2J3x6bUYl1hHaiKXfSb+VF6d5Gnd6UYc8XaClQAAIABAACAAAAAgAEAAAAAAAAAAQMIKCMAAAAAAAABBBYAFC80"
-  + "qhzwClOwVaKRoDp9RfCmmItSAA=="
-);
 
 const STATE = 0;
 const KEYCODE = 1;
@@ -46,11 +32,7 @@ self.onmessage = async (event) => {
   if (type === "init") {
     keyBuffer = new Int32Array(event.data.sharedBuffer);
     camera = CameraChannel.forWorker(event.data.cameraBuffer);
-    // A page with no tray is a page whose reader keeps the card it starts
-    // with, which is how this worked before the tray existed.
-    cards = event.data.cardBuffer ? CardTray.forWorker(event.data.cardBuffer) : null;
     debug = !!event.data.debug;
-    if (event.data.firmware) firmware = event.data.firmware;
     if (event.data.bitcoinNetwork) bitcoinNetwork = event.data.bitcoinNetwork;
     try {
       await boot(event.data.width, event.data.height);
@@ -65,36 +47,19 @@ async function boot(width, height) {
   pyodide = await loadPyodide({ indexURL: "pyodide-e24b45d3/" });
 
   post("status", { stage: "libraries", message: "loading libraries…" });
-  // Pillow and pycryptodome are wanted whichever firmware this is: the renderer
-  // draws every screen with Pillow, and pycryptodome is what stands in for
-  // pbkdf2_hmac further down, which is the mnemonic to seed path and so is the
-  // wallet itself. Dropping that one boots a stock wallet that hangs before the
-  // home screen, which is how it was caught.
-  //
-  // cryptography is the fork's alone. Twelve files in the smartcard tree import
-  // it, for pysatochip's card sessions; nothing in stock does, and neither do
-  // the stand-in packages here. Loading it regardless charged every stock visit
-  // for it, plus the openssl and cffi Pyodide pulls in behind it.
+  // The renderer draws every screen with Pillow, and pycryptodome is what
+  // stands in for pbkdf2_hmac further down, which is the mnemonic to seed path
+  // and so is the firmware itself. Dropping that one boots firmware that hangs
+  // before the home screen, which is how it was caught.
   //
   // numpy is never reachable: decode_qr imports it inside a try that starts with
   // "import cv2", and opencv is not in this list, so np is None either way.
-  const base = firmware;
-  const smartcard = base === "smartcard" || base === "doomsigner";
-  await pyodide.loadPackage(smartcard
-    ? ["Pillow", "pycryptodome", "cryptography"]
-    : ["Pillow", "pycryptodome"]);
+  await pyodide.loadPackage(["Pillow", "pycryptodome"]);
 
-  post("status", { stage: "wallet-zip", message: "unpacking wallet…" });
-  // One zip per firmware, each built by build/build-wallet-zip.sh from its own
-  // section of UPSTREAM and published with its own pair of hashes.
-  // doomsigner is the smartcard zip plus a Silent Payments overlay. The zip
-  // that is hashed and unpacked is the published build; the overlay files are
-  // written on top after that, so the hash still describes those zip bytes.
-  // Each firmware loads its own zip. This used to map doomsigner onto the
-  // smartcard zip, because doomsigner had no build of its own and was patched
-  // after unpack; wallet.html carried a second copy of the same mapping, and
-  // fixing only that one left this one quietly loading the wrong wallet.
-  const zip = await (await fetch(`wallet-${firmware}.zip`)).arrayBuffer();
+  post("status", { stage: "firmware-zip", message: "unpacking firmware…" });
+  // Built by build/build-firmware-zip.sh from UPSTREAM and published with its
+  // own pair of hashes.
+  const zip = await (await fetch("seedsigner-stock.zip")).arrayBuffer();
 
   // Hash what arrived, before unpacking it, and hand it to the page: the panel
   // shows it beside the sha256 UPSTREAM publishes. It has to be these bytes,
@@ -104,26 +69,18 @@ async function boot(width, height) {
   const digest = await crypto.subtle.digest("SHA-256", zip);
   post("zip-sha256", { sha256: hex(digest) });
 
-  await pyodide.unpackArchive(zip, "zip", { extractDir: "/wallet" });
-
-  // doomsigner used to be patched here: the smartcard zip was unpacked and then
-  // ~1,500 lines of silent payments were written over it at runtime, because
-  // there was no fork to build a zip from. There is now, so the code arrives in
-  // wallet-doomsigner.zip like every other line the wallet runs, and the browser
-  // executes exactly what the device image does. The check that used to guard
-  // the overlay is gone with it: a zip that could not do this would fail its own
-  // build, which is a better place to find out than here.
+  await pyodide.unpackArchive(zip, "zip", { extractDir: "/firmware" });
 
   const driver = await (await fetch("browser_display.py")).text();
-  pyodide.FS.writeFile("/wallet/browser_display.py", driver);
+  pyodide.FS.writeFile("/firmware/browser_display.py", driver);
 
   const cameraShim = await (await fetch("browser_camera.py")).text();
-  pyodide.FS.writeFile("/wallet/browser_camera.py", cameraShim);
+  pyodide.FS.writeFile("/firmware/browser_camera.py", cameraShim);
 
   const qrShim = await (await fetch("browser_qr.py")).text();
-  pyodide.FS.writeFile("/wallet/browser_qr.py", qrShim);
+  pyodide.FS.writeFile("/firmware/browser_qr.py", qrShim);
 
-  post("status", { stage: "starting", message: "starting wallet…" });
+  post("status", { stage: "starting", message: "starting SeedSigner…" });
 
   // Frames come back through this callback rather than being polled.
   pyodide.globals.set("js_frame_sink", (bytes) => {
@@ -144,7 +101,7 @@ async function boot(width, height) {
     self.postMessage({ type: "size", width: w, height: h });
   });
 
-  // What the wallet's settings say the Bitcoin network is. Unlike js_log this
+  // What the firmware's settings say the Bitcoin network is. Unlike js_log this
   // is not behind the debug flag: the page shows it to everyone, and it matters
   // most to the visitor who never turns tracing on.
   pyodide.globals.set("js_network", (name, mainnet) => {
@@ -169,12 +126,11 @@ async function boot(width, height) {
   });
 
   pyodide.globals.set("js_camera", camera);
-  pyodide.globals.set("js_cards", cards);
 
   pyodide.runPython(shims(width, height, bitcoinNetwork));
   post("ready", {});
 
-  // Blocks for the lifetime of the worker. This is the whole reason the wallet
+  // Blocks for the lifetime of the worker. This is the whole reason the firmware
   // runs here rather than on the page's thread.
   try {
     post("log", { message: "starting controller…" });
@@ -196,11 +152,10 @@ except BaseException:
 
 function shims(width, height, network) {
   const net = JSON.stringify(network || "T");
-  const spSendRef = JSON.stringify(SP_SEND_REF_B64);
   return `
-import sys, json, importlib, importlib.abc, importlib.util, threading
+import sys, json, threading
 
-# The wallet's own logging, surfaced to the browser console.
+# The firmware's own logging, surfaced to the browser console.
 #
 # Without this, logger.info() inside seedsigner/ goes nowhere: only the tracing
 # shims below reach js_log, so a view could report exactly why it refused a
@@ -224,9 +179,9 @@ if ${debug ? "True" : "False"}:
     _root = _logging.getLogger()
     _root.setLevel(_logging.INFO)
     _root.addHandler(_JsLogHandler())
-sys.path.insert(0, "/wallet")
+sys.path.insert(0, "/firmware")
 
-# The device's own settings file, written before the wallet reads it. Settings
+# The device's own settings file, written before the firmware reads it. Settings
 # loads settings.json from the working directory when it is not running on
 # SeedSigner OS, so both of these are configuration, the way a configured device
 # would have them, and nothing under seedsigner/ is touched to get them.
@@ -234,22 +189,13 @@ sys.path.insert(0, "/wallet")
 #   display_config  the SeedSigner Plus panel, which is the screen drawn here.
 #   network         Mainnet when the page asks for ?network=mainnet; otherwise
 #                   testnet. Still changeable in Settings on hardware.
-#   silent_payments Doomsigner only. It ships disabled, because on a real device
-#                   it is an experiment the owner opts into rather than a menu
-#                   entry everyone scrolls past. This firmware exists to show it,
-#                   so the simulator configures it on -- the same way an owner
-#                   would, through the settings file, rather than by changing
-#                   what the wallet defaults to.
 #
 # Every key and value here is a SettingsConstants: SETTING__DISPLAY_CONFIGURATION,
-# SETTING__NETWORK, TESTNET, SETTING__SILENT_PAYMENTS and OPTION__ENABLED.
+# SETTING__NETWORK and TESTNET.
 import os, json
-os.chdir("/wallet")
+os.chdir("/firmware")
 _settings = {"display_config": "st7789_320x240", "network": ${net}}
-if ${JSON.stringify(firmware)} == "doomsigner":
-    _settings["silent_payments"] = "E"
-    _settings["cache_scard_pin"] = "E"
-with open("/wallet/settings.json", "w") as handle:
+with open("/firmware/settings.json", "w") as handle:
     json.dump(_settings, handle)
 
 # --- no real threads in the browser -----------------------------------------
@@ -271,25 +217,24 @@ class _NoThread:
 
     # The controller blocks waiting for BackgroundImportThread to set up storage,
     # and its run() is a one-shot rather than a loop, so it has to run even
-    # though it is a BaseThread. Without it the wallet hangs forever after the
+    # though it is a BaseThread. Without it the firmware hangs forever after the
     # splash.
     #
-    # The address verification threads are the other kind of exception. They look
-    # like animation loops -- a while over keep_running -- but they are a search
-    # that ends: they walk the derivation path looking for one address and stop
-    # when they find it. Dropped, nothing ever searched, so Verify Address sat
+    # The address verification thread is the other kind of exception. It looks
+    # like an animation loop -- a while over keep_running -- but it is a search
+    # that ends: it walks the derivation path looking for one address and stops
+    # when it finds it. Dropped, nothing ever searched, so Verify Address sat
     # showing an index that never moved and its Skip 10 incremented a counter no
     # thread was reading. Run, they answer at once for an address that really is
-    # the wallet's, which is the case worth having work.
+    # the firmware's, which is the case worth having work.
     RUN_INLINE_ANYWAY = {
         "BackgroundImportThread",
         "BruteForceAddressVerificationThread",
-        "ExpandedBruteForceAddressVerificationThread",
     }
 
     # How far one of those searches may walk before this gives up on it. Upstream
     # has no bound on the not-found case because on hardware it is a real thread
-    # somebody can cancel; here it would be the whole worker, wedged. A wallet
+    # somebody can cancel; here it would be the whole worker, wedged. A device
     # that has just exported its own key is being asked about its own first
     # address, so this only has to be deep enough to be honest about a miss.
     INLINE_SEARCH_LIMIT = 100
@@ -340,60 +285,18 @@ class _NoThread:
 threading.Thread = _NoThread
 
 
-class _NoTimer:
-    """
-    Stand-in for threading.Timer.
-
-    Settings.save() debounces its write behind a Timer, and it is the only
-    Timer in the wallet. With no timers the write never happens and changing
-    any setting, the network among them, raises on the settings screen. There
-    is nothing to debounce in here, so the callback runs inline on start().
-    """
-
-    def __init__(self, interval, function, args=None, kwargs=None):
-        self.interval, self._function = interval, function
-        self._args, self._kwargs = args or (), kwargs or {}
-        self.name, self.daemon = "notimer", None
-
-    def start(self):
-        js_log(f"timer inline: {getattr(self._function, '__name__', None)}")
-        try:
-            self._function(*self._args, **self._kwargs)
-        except Exception as exc:
-            js_log(f"inline timer failed: {type(exc).__name__}: {exc}")
-
-    def cancel(self): pass
-    def join(self, timeout=None): pass
-    def is_alive(self): return False
-
-threading.Timer = _NoTimer
-
 # A lock that cannot deadlock, because there is nobody here to deadlock with.
 #
-# Running a Timer's callback inline on start() runs it inside whatever the
-# scheduler was holding when it scheduled it, and Settings.save() schedules its
-# write while holding _save_lock, which the write then takes again. On a device
-# those are two threads and the second one waits a moment for the first. Here
-# they are one thread, and a plain Lock waits for itself forever: the wallet
-# accepted the settings change, stored it, and then never drew another frame.
+# A thread's work run inline on start() runs inside whatever lock its starter
+# was holding. On a device those are two threads and the second one waits a
+# moment for the first. Here they are one thread, and a plain Lock taken twice
+# waits for itself forever.
 #
 # There is one thread in this environment, so the only acquire that can ever
 # block is a thread blocking on itself, which is a deadlock rather than
 # contention. A reentrant lock turns exactly that case into a pass and leaves
 # every other use of a lock as it was.
 threading.Lock = threading.RLock
-
-# --- pycryptodomex is pycryptodome under another name ------------------------
-class _CryptodomeAlias(importlib.abc.MetaPathFinder):
-    def find_spec(self, fullname, path=None, target=None):
-        if fullname != "Cryptodome" and not fullname.startswith("Cryptodome."):
-            return None
-        real = "Crypto" + fullname[len("Cryptodome"):]
-        module = importlib.import_module(real)
-        sys.modules[fullname] = module
-        return importlib.util.find_spec(real)
-
-sys.meta_path.insert(0, _CryptodomeAlias())
 
 # --- hashlib here has no OpenSSL behind it -----------------------------------
 # pbkdf2_hmac is not implemented in Python: it lives in _hashlib, the OpenSSL
@@ -427,13 +330,11 @@ if not hasattr(hashlib, "pbkdf2_hmac"):
 # Reporting the binary as absent is both true here and the case they already
 # know how to handle.
 #
-# call() reports failure by returning non-zero rather than by raising, because
-# the two firmwares disagree about which one they can survive. The fork's qr.py
-# wraps the qrencode call in try/except FileNotFoundError and also checks the
-# return code; stock's has no try/except at all and only checks the code, so a
-# raise there escapes and every screen that draws a QR ends in a visible System
-# Error. A non-zero return satisfies both, and "the binary ran and failed" is no
-# less true here than "the binary is not installed".
+# call() reports failure by returning non-zero rather than by raising: stock's
+# qr.py has no try/except around the qrencode call and only checks the return
+# code, so a raise there escapes and every screen that draws a QR ends in a
+# visible System Error. "The binary ran and failed" is no less true here than
+# "the binary is not installed".
 import subprocess
 
 def _no_such_binary(*args, **kwargs):
@@ -468,7 +369,7 @@ Renderer.configure_instance()
 renderer = Renderer.get_instance()
 
 # --- buttons come from the page, not from GPIO -------------------------------
-# The wallet blocks here waiting for a press. In a worker that is exactly what
+# The firmware blocks here waiting for a press. In a worker that is exactly what
 # we want: js_wait_for_key parks on Atomics.wait until the page posts a key.
 def _get_instance(cls):
     if cls._instance is None:
@@ -482,7 +383,7 @@ def _get_instance(cls):
         cls._instance = instance
     return cls._instance
 
-# This fork identifies buttons by name ("KEY_UP"), older ones by GPIO number.
+# Buttons are identified by name ("KEY_UP") here, by GPIO number in older releases.
 # Resolving through the constants class works for either.
 BUTTON_NAMES = [None, "KEY_UP", "KEY_DOWN", "KEY_LEFT", "KEY_RIGHT",
                 "KEY_PRESS", "KEY1", "KEY2", "KEY3"]
@@ -562,21 +463,6 @@ browser_camera.install(js_camera)
 import browser_qr
 browser_qr.install(_poll_button)
 
-# --- which smartcard is in the reader is the page's to say --------------------
-# The pyscard stand-in ships with the wallet, so unlike the camera there is
-# nothing to install here beyond handing it the tray. Left alone it keeps a card
-# of its own, and the reader is never empty.
-#
-# Smartcard firmware only. Stock SeedSigner has no card code, so its wallet zip
-# carries no smartcard package to import: a zip whose claim is "the pin, its
-# pinned dependencies and this repository's stand-ins, and nothing else" should
-# not be padded with a package that firmware can never reach. The flag says which
-# firmware this is rather than catching ImportError, because a missing module
-# here would then be indistinguishable from a broken build.
-if js_cards is not None and ${firmware === "smartcard" || firmware === "doomsigner" ? "True" : "False"}:
-    from smartcard import simulated_card
-    simulated_card.install(js_cards, js_log)
-
 js_report_size(renderer.canvas_width, renderer.canvas_height)
 
 # --- trace the screen lifecycle so a stall is locatable ----------------------
@@ -624,12 +510,10 @@ def _qr_run_from_a_clean_queue(self):
 
 _QRScreen._run = _qr_run_from_a_clean_queue
 
-# The keyboard screens have the same problem and it is worse, because a leaked
-# press does not close them, it types a character. The card PIN prompt opens
-# straight after a button press on the screen before it, that press is still
-# claimable, and the PIN came out one letter too long: "aaaaa" for a card whose
-# PIN is "aaaa". The card then refused it, signing fell back to memory and no
-# nonces were ever pooled.
+# The passphrase keyboard has the same problem and it is worse, because a leaked
+# press does not close it, it types a character. The keyboard opens straight
+# after a button press on the screen before it, that press is still claimable,
+# and the passphrase would come out one letter longer than what was typed.
 from seedsigner.gui.screens.seed_screens import SeedAddPassphraseScreen as _KeyboardScreen
 _keyboard_run = _KeyboardScreen._run
 
@@ -705,109 +589,14 @@ def _traced_dest_run(self):
         raise
 Destination.run = _traced_dest_run
 
-# The controller consults these right after the splash. Only the fork has the
-# helper: stock has no seedsigner.helpers.seedsigner_os at all, so this is
-# tracing that simply has nothing to trace there.
-try:
-    from seedsigner.helpers import seedsigner_os as _ss_os
-except ImportError:
-    _ss_os = None
-
-if _ss_os is not None:
-    _orig_devbuild = _ss_os.is_seedsigner_os_dev_build
-    def _traced_devbuild():
-        js_log("is_seedsigner_os_dev_build() called")
-        result = _orig_devbuild()
-        js_log(f"is_seedsigner_os_dev_build() -> {result}")
-        return result
-    _ss_os.is_seedsigner_os_dev_build = _traced_devbuild
-
-    import seedsigner.controller as _ctrl
-    _ctrl.is_seedsigner_os_dev_build = _traced_devbuild
-
-# --- one upstream bug, put back from outside ---------------------------------
-# ShieldSigner B11 -- the tag UPSTREAM pins, and the tag the official
-# pi0-smartcard image is built from -- calls _format_word_password() in
-# password_generator_views.py without importing it. The name is defined in
-# tools_views.py and never brought across, so every word-based password ends in
-# a System Error naming line 893 instead of a password. It is nothing to do with
-# the dice it was first reported from: EFF short, EFF long and BIP39 all reach
-# the same line, whatever the entropy came from. Real B11 hardware has it too.
-#
-# From outside, and only where the name is missing. The wallet zip stays the
-# pinned tree byte for byte -- that is the claim this repository exists to let
-# anyone check -- so this is replaced the way every other seam here is, from
-# this side of the boundary rather than by editing the tree. Upstream's own
-# master fixes it with exactly this import, so the guard turns this into a
-# no-op the day UPSTREAM can move to a tag that carries the fix. There is no
-# such tag yet: B11 is the newest one published.
-#
-# tools_views first, and that order is load bearing. The two modules import each
-# other: password_generator_views pulls its shared helpers from tools_views at
-# the top, and tools_views pulls the password views back in with a star import
-# on its last line, which works only because tools_views is the one that gets
-# imported first and so is fully defined by the time the star runs. Importing
-# password_generator_views first inverts that -- tools_views ends up starring in
-# a module that is still executing its own import block -- and the Tools menu
-# then dies on "name 'ToolsPasswordGeneratorTypeView' is not defined" before it
-# can reach the bug below. Doing it in the order the wallet itself does costs
-# nothing and stays out of that.
-#
-# Broad except on purpose. These are imported lazily by the menu that needs
-# them, so a module that fails to import here would take the whole wallet down
-# with it, where today it only spoils the one menu.
-try:
-    from seedsigner.views import tools_views  # imported first, for the order above
-    from seedsigner.views import password_generator_views as _pgv
-except ImportError:
-    _pgv = None   # stock has no password generator at all
-except Exception as exc:
-    _pgv = None
-    js_log(f"password_generator_views did not import: {type(exc).__name__}: {exc}")
-
-if _pgv is not None and not hasattr(_pgv, "_format_word_password"):
-    from seedsigner.views.tools_views import _format_word_password as _fwp
-    _pgv._format_word_password = _fwp
-    js_log("patched in password_generator_views._format_word_password")
-
-# --- and a second one, same shape -------------------------------------------
-# SeedKeeperSelectView.run() reads self.seed at two points that both come
-# before the only line that ever assigns it. The assignment is far down the
-# success path, after a secret has been exported; the two reads are on the way
-# out -- "this card holds nothing I can load", and "back was pressed at the
-# secret list" -- so both of the ordinary ways of leaving that screen raise
-# AttributeError instead of leaving it. Loading from a freshly initialised card
-# is the first one, and it is what a new SeedKeeper does.
-#
-# Both reads ask the same question, isinstance(self.seed, AezeedSeed), to decide
-# whether to return to the aezeed passphrase screen rather than straight back.
-# So the attribute is given the value the assignment further down uses, at
-# construction, which answers that question correctly in both directions: no
-# pending seed is not an AezeedSeed and goes back, and a pending aezeed still
-# reaches its passphrase screen. Setting it only when it is missing leaves a
-# fixed upstream alone.
-#
-# Still open on upstream's master, unlike the one above.
-if _pgv is not None:
-    from seedsigner.views.seed_views import SeedKeeperSelectView as _sksv
-    _orig_sksv_init = _sksv.__init__
-
-    def _sksv_init(self, *args, **kwargs):
-        _orig_sksv_init(self, *args, **kwargs)
-        if not hasattr(self, "seed"):
-            self.seed = self.controller.storage.get_pending_seed()
-
-    _sksv.__init__ = _sksv_init
-    js_log("patched in SeedKeeperSelectView.seed")
-
-# --- which Bitcoin network the wallet is set to ------------------------------
+# --- which Bitcoin network the firmware is set to ------------------------------
 # The page has to show this, and the page must not be the one that knows it: a
-# second copy of a setting is a copy that can disagree with the wallet, and it
+# second copy of a setting is a copy that can disagree with the firmware, and it
 # would disagree exactly when someone had just changed the setting. So the value
 # is read back out of Settings with upstream's own accessors, at the two moments
 # it can be new: once here, before the controller starts, and again after every
-# write the wallet makes. set_value is that write, for every settings screen in
-# both firmwares, so wrapping it observes the change rather than predicting it.
+# write the firmware makes. set_value is that write, for every settings screen,
+# so wrapping it observes the change rather than predicting it.
 from seedsigner.models.settings import Settings
 from seedsigner.models.settings_definition import SettingsConstants
 
@@ -826,19 +615,6 @@ def _traced_set_value(self, *args, **kwargs):
     _report_network()
     return result
 Settings.set_value = _traced_set_value
-
-import os
-if os.path.exists("/wallet/sp_overlay_install.py"):
-    import sp_overlay_install
-    sp_overlay_install.install()
-    js_log("silent-payments overlay installed")
-    import base64 as _b64
-    from embit.silent_payments import SilentPaymentsPSBT as _SPPSBT
-    _sample = ${spSendRef}
-    _psbt = _SPPSBT.parse(_b64.b64decode(_sample))
-    if not _psbt.has_sp_outputs or _psbt.outputs[0].sp_data is None:
-        raise RuntimeError("post-install SP send parse failed")
-    js_log("post-install SP send parse ok")
 
 _report_network()
 

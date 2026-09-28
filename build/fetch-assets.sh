@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Fetch the Pyodide runtime -- the CPython-on-WebAssembly build the simulator
-# runs the wallet inside.
+# runs the firmware inside.
 #
 # It is about 26 MB of prebuilt binaries and it is deliberately not committed:
 # a git repository is a bad place for a WASM blob nobody can read, and putting
@@ -20,8 +20,8 @@
 #   2. That tarball contains pyodide-lock.json, which lists every package in the
 #      distribution with its own sha256. Because the tarball is verified, the
 #      lock file is too.
-#   3. The handful of compiled packages the wallet needs at runtime (Pillow,
-#      pycryptodome, cryptography, and what they depend on) are fetched
+#   3. The compiled packages the firmware needs at runtime (Pillow and
+#      pycryptodome, and anything they depend on) are fetched
 #      separately and checked against the hashes in that lock file. No hash for
 #      them is written down here, because it does not need to be -- it is
 #      already inside something we verified.
@@ -53,11 +53,11 @@ PYODIDE_CORE_SHA256="70dba93432f3653155998cc9001f9c200182343c2f95165a2f9e9e4673f
 # and every one is checked against the lock file before it is kept.
 PYODIDE_CDN="https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full"
 
-# Must match the loadPackage() call in src/web/wallet-worker.js. Their
+# Must match the loadPackage() call in src/web/worker.js. Their
 # dependencies are resolved from pyodide-lock.json rather than listed here, so
-# this stays the short list of what the wallet actually asks for. The script
+# this stays the short list of what the firmware actually asks for. The script
 # prints the worker's line at the end so any drift is visible on sight.
-PYODIDE_PACKAGES=(Pillow pycryptodome cryptography)
+PYODIDE_PACKAGES=(Pillow pycryptodome)
 
 # ---------------------------------------------------------------------------
 # Where things are
@@ -130,7 +130,7 @@ fi
 #
 # The other direction is asked as well, because checking only the files the
 # manifest happens to name would miss a file added since it was written: it would
-# be served, or packaged into a wallet zip, and be listed nowhere. Which files
+# be served, or packaged into a firmware zip, and be listed nowhere. Which files
 # should be listed is not repeated here -- build/update-checksums.sh --list is
 # the one place that decides, and the same script is what regenerates the file
 # when a change to one of them is deliberate.
@@ -193,7 +193,7 @@ verify_manifest_covers() {
         unlisted=$((unlisted + 1))
     done <<< "${covered}"
 
-    [ "${unlisted}" -eq 0 ] || die "${unlisted} file(s) are served or packaged into a wallet zip but are not in build/checksums.txt
+    [ "${unlisted}" -eq 0 ] || die "${unlisted} file(s) are served or packaged into a firmware zip but are not in build/checksums.txt
 
 ${REGENERATE_HINT}"
     echo "    ok       every file it should cover is listed ($(echo "${covered}" | wc -l | tr -d ' ') of them)"
@@ -256,11 +256,10 @@ verify_installed() {
 
 # lock_closure LOCKFILE
 #
-# Prints "file_name<space>sha256" for every package the wallet needs: the ones
+# Prints "file_name<space>sha256" for every package the firmware needs: the ones
 # named in PYODIDE_PACKAGES plus everything they depend on, transitively.
 # Resolved from the lock file rather than hardcoded, because the dependency
-# edges are Pyodide's to decide and they change between releases -- cryptography
-# pulling in openssl and cffi, cffi pulling in pycparser, and so on.
+# edges are Pyodide's to decide and they change between releases.
 lock_closure() {
     python3 - "$1" "${PYODIDE_PACKAGES[@]}" <<'PY'
 import json, sys
@@ -332,7 +331,7 @@ ACTUAL_SHA256="$(sha256_of "${TARBALL}")"
 if [ "${ACTUAL_SHA256}" != "${PYODIDE_CORE_SHA256}" ]; then
     # Deliberately fatal, and deliberately before anything is unpacked. A
     # runtime that is not the one this repo pins is not a runtime to run a
-    # bitcoin wallet in, whatever the reason for the difference.
+    # Bitcoin signer in, whatever the reason for the difference.
     die "sha256 mismatch on the Pyodide runtime -- REFUSING TO UNPACK
   url      ${PYODIDE_CORE_URL}
   expected ${PYODIDE_CORE_SHA256}
@@ -369,14 +368,14 @@ done
 step "installed the runtime into ${DEST_DIR}"
 
 # ---------------------------------------------------------------------------
-# The compiled packages the wallet loads at runtime
+# The compiled packages the firmware loads at runtime
 # ---------------------------------------------------------------------------
 #
-# These stay out of wallet.zip: they are compiled extensions built for
+# These stay out of the firmware zip: they are compiled extensions built for
 # emscripten, so they can only come from Pyodide, and the worker asks for them
 # by name with loadPackage() once the interpreter is up.
 
-step "fetching the packages the wallet loads at boot (${PYODIDE_PACKAGES[*]}) and their dependencies"
+step "fetching the packages the firmware loads at boot (${PYODIDE_PACKAGES[*]}) and their dependencies"
 
 # Resolved into a variable first, deliberately. Feeding the loop from a process
 # substitution would discard this command's exit status -- set -e and pipefail
@@ -420,10 +419,10 @@ echo "  core tarball sha256 ${PYODIDE_CORE_SHA256}"
 echo
 
 # Printed rather than parsed and enforced: this script does not own
-# wallet-worker.js, and a check that breaks when someone reformats JavaScript
+# worker.js, and a check that breaks when someone reformats JavaScript
 # would be worse than useless. Read the line; it should ask for exactly the
 # packages named in PYODIDE_PACKAGES above.
-WORKER="${REPO_ROOT}/src/web/wallet-worker.js"
+WORKER="${REPO_ROOT}/src/web/worker.js"
 if [ -f "${WORKER}" ]; then
     echo "  This script fetched: ${PYODIDE_PACKAGES[*]}"
     echo "  ${WORKER##*/} asks for:"

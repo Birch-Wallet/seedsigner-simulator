@@ -1,22 +1,22 @@
 # Tests
 
-The simulator runs unmodified SeedSigner firmware under Pyodide, with four
+The simulator runs unmodified stock SeedSigner firmware under Pyodide, with its
 hardware seams faked from outside it. These tests exist to check the seams,
 because that is where a browser port can quietly start lying: a camera that
-reports a QR nobody held up, a card reader that hands over the wrong card.
+reports a QR nobody held up, a key that never arrives.
 
-Everything here reads the wallet's own log as its oracle. The wallet narrates
-every screen it puts up (`display() enter: SeedFinalizeScreen`), the camera says
-which decoder it chose, and the simulated card layer says which card the Python
-side saw. Asserting on those lines is a statement about what the wallet actually
-did; a screenshot is not. That narration only happens when the page is loaded
-with `?debug=1`, which is why every URL the tests build carries it.
+Everything here reads the firmware's own log as its oracle. The firmware narrates
+every screen it puts up (`display() enter: SeedFinalizeScreen`) and the camera
+says which decoder it chose. Asserting on those lines is a statement about what
+the firmware actually did; a screenshot is not. That narration only happens when
+the page is loaded with `?debug=1`, which is why every URL the tests build
+carries it.
 
 ## Running them
 
 Prerequisites:
 
-    pip install playwright==1.47.0
+    pip install playwright
     playwright install chromium
 
 Then, from a fresh clone:
@@ -25,26 +25,15 @@ Then, from a fresh clone:
 
 That builds what is missing, generates the QR videos, starts a server, runs
 everything against it, and stops the server afterwards. The first run also
-downloads the Pyodide runtime and builds both wallet zips from their pinned
-upstream commits, which takes a few minutes; later runs reuse all of it.
+downloads the Pyodide runtime and builds the firmware zip from its pinned upstream
+commit, which takes a few minutes; later runs reuse all of it.
 
-A subset, by substring on the step name -- the names are `leak_scan`, `cards`,
-`tray_layout`, `device`, `firmware`, `build_info`, `settings`, `scan_seedqr`, `scan_compact`,
-`scan_native`, `stock_scan_seedqr`, `stock_scan_compact`, `stock_scan_native`,
-`cards_browser`, `cards_seed`, `cards_seedkeeper`, `cards_descriptor`, `mainnet`,
-`tutorial`, `tutorial_single`:
+A subset, by substring on the step name -- the names are `leak_scan`, `device`,
+`build_info`, `settings`, `scan_seedqr`, `scan_compact`, `scan_native`,
+`camera_stall`, `passphrase`, `image_entropy`, `mainnet`:
 
     python3 test/run.py scan          # everything with "scan" in the name
-    python3 test/run.py stock         # the three stock-firmware scans
-
-The three scan tests run once per firmware: the smartcard fork the simulator has
-always run, and stock SeedSigner. The card tests are smartcard only, because the
-menus they drive do not exist in stock. `SIM_FIRMWARE` picks the firmware for a
-single test file run by hand; `test_firmware.py` ignores it and visits both by
-name, because switching between them is what it is about.
-
     python3 test/run.py leak          # just the leak scanner
-    python3 test/run.py cards tray    # the smartcard side only
 
 Individual files run on their own too, against a server you start yourself:
 
@@ -53,31 +42,15 @@ Individual files run on their own too, against a server you start yourself:
     python3 test/test_scan.py
 
 Screenshots land in `test/artifacts/`. Most are taken only when something
-fails. The exception is the walkthroughs: a run photographs the panel the first
-time it names a phase, as `walkthrough-<walkthrough>-<firmware>-<n>-<phase>.png`,
-so a passing run leaves pictures of the ceremony rather than only of a wreck.
-
-How far a set goes is how far that run goes, which is not the same for all of
-them. `stock_qr` and the stock single-sig scenarios drive a whole ceremony and
-photograph most of its phases; `doomsigner_card` stops at the Card B boundary
-and the hands-on run stops part way, both on purpose, so those two leave one
-opening picture each. A complete matrix would need a capture pass that exists
-to take pictures, and there is no such pass.
-
-A set is also best effort rather than exhaustive. The shot is taken from a poll
-loop that looks every 100ms, so a phase the run crosses faster than that leaves
-no picture, and two runs of the same walkthrough can photograph different
-phases. Missing pictures are not a failure signal.
-
-The QR videos land there too. `run.py` deletes them afterwards because they are
-160MB and regenerate in seconds; set `SIM_KEEP_VIDEOS=1` to keep them.
+fails. The QR videos land there too. `run.py` deletes them afterwards because
+they are large and regenerate in seconds; set `SIM_KEEP_VIDEOS=1` to keep them.
 
 | variable | default | what it does |
 | --- | --- | --- |
 | `SIM_PORT` | `8770` | port the test server listens on |
 | `SIM_URL` | `http://127.0.0.1:$SIM_PORT` | where the tests look for the simulator |
 | `SIM_ARTIFACT_DIR` | `test/artifacts` | screenshots and videos |
-| `SIM_ASSETS` | `build/out`, `src/web` | where `wallet.zip` and `pyodide/` are |
+| `SIM_ASSETS` | `build/out`, `src/web` | where `seedsigner-stock.zip` and the Pyodide runtime are |
 | `QR_KIND` | `qr` | which QR `test_scan.py` holds up: `qr` or `qr-compact` |
 
 `SIM_URL` is the useful one: point it at a deployed copy and the same tests prove
@@ -93,28 +66,8 @@ layout, and a human checking that once does not scale to every future commit.
 Public URLs are deliberately untouched. The allowlist is at the top of the file
 and every entry says why it is there.
 
-**`test_cards.py`**: drives the pyscard stand-in in `src/smartcard` directly, no
-browser: three distinct cards with distinct UIDs, an empty reader that raises
-rather than inventing a card, state that survives a trip out of the reader, and
-the right state published back to the tray. Then a seed: refused before the PIN
-is verified, refused if it is too short, refused a second time, and once accepted,
-answering with keys that pysatochip's own `CardDataParser` (read out of
-`wallet.zip`, so it is the copy the browser runs) recovers a public key from.
-The card's `m/84'/0'/0'` has to equal the same seed derived outside it, and its
-master fingerprint has to be the test vector's. Then the SeedKeeper half: a
-masterseed and a 448-character 2 of 3 multisig descriptor stored, listed,
-exported and checked against pysatochip's own header parser, the export rights
-of each enforced by the card, and the space each costs compared with upstream's
-own `calculate_seedkeeper_secret_size`. Two seconds, and it says why the browser
-tests failed before either has finished booting.
-
-**`test_tray_layout.py`**: the card tray as a control: three cards side by side
-at a narrow viewport with no horizontal scrollbar, the accent and lift that show
-which card is in, one card in the reader at a time, and Enter on a focused card
-inserting it *without* also reaching the wallet's key handler underneath.
-
 **`test_device.py`**: the device art as a control, on a phone. Two claims, and
-neither of them needs the wallet, so this file costs seconds.
+neither of them needs the firmware, so this file costs seconds.
 
 The screen is not a button. It used to be the select key, on the grounds that it
 is the biggest target on the shell, and on a phone that meant a tap anywhere on
@@ -132,26 +85,17 @@ them 21 pixels across, which is not a thumb target, so the page offers the devic
 the whole viewport and lays it along the phone's long side: upright it is turned
 across the screen, sideways it is height-bound, and the keys are about 46 pixels
 either way. Both orientations are checked and photographed, along with the
-wallet's own screen staying 4:3 and unstretched in both, since what the scan
+firmware's own screen staying 4:3 and unstretched in both, since what the scan
 tests compare is that canvas.
 
-**`test_firmware.py`**: the firmware switch, and what the page claims while it is
-on each one. Two firmwares are built and the page runs one of them, which decides
-what it can honestly show: the sentence under the device has to name the running
-firmware and call the fork a fork, the switch has to actually come back on the
-other one with the rest of the query string intact, and the card tray has to be
-**absent** under stock rather than disabled or greyed, because stock has no card
-code for a tray to control. Nothing here waits for the wallet to boot, so it
-costs seconds.
-
-**`test_build_info.py`**: the technical details panel, and the one check the page
+**`test_build_info.py`**: the **i** panel, and the one check the page
 makes about itself. The panel is where a visitor is told what is running, so
 every value in it is compared here against something that is not the panel's own
 source: the tag, the commit and both hashes against `UPSTREAM`, the Pyodide
 version against `build/fetch-assets.sh`, and the dependency list against the
 licences manifest inside the built zip. The sha256 the panel shows for the zip
 the page received is the worker's hash of the bytes it fetched, so it is compared
-against the zip on disk, for both firmwares.
+against the zip on disk.
 
 Then the part that makes it a check rather than a decoration: a copy of the zip
 with one byte appended is served from a second server, in front of the real one,
@@ -160,16 +104,14 @@ hash. `build/out` is never touched, so there is nothing to put back if this fail
 halfway. The limitation line is asserted too, because a page that quietly stopped
 saying the self-check is not proof would be claiming more than it can.
 
-**`test_settings.py`**: a setting changed through the wallet's own menus, and the
-network indicator that follows it. It exists because changing a setting did not
-work and nothing here noticed: `Settings.save()` debounces its write behind a
-`threading.Timer`, the worker shimmed `Thread` but not `Timer`, and every change
-died on a System Error. Then, once the Timer ran inline, it ran inside the lock
-`save()` holds while scheduling it and the wallet wedged after storing the value,
-which is why one of the checks is that the wallet drew again afterwards. It also
-pins the starting network down: a fresh page comes up on **Testnet**, which is
-`settings.json` and not a patch, and going to Mainnet through Settings > Advanced
-is what makes the page say so loudly and stop offering our own test network.
+**`test_settings.py`**: a setting changed through the firmware's own menus, and the
+network indicator that follows it. Changing a setting once died on a System
+Error and nothing noticed, so this drives Settings > Advanced > Bitcoin network
+to Mainnet and requires the firmware to accept it and keep drawing. It also pins
+the starting network down: a fresh page comes up on **Testnet**, which is
+`settings.json` and not a patch, and going to Mainnet is what makes the page's
+warning grow its mainnet half. The **i** panel is opened too, and must name no
+outside origin the page talks to, because there is none.
 
 **`test_scan.py`**: the whole scan path against Chromium's fake camera, run
 twice. `qr.y4m` is the digit-based SeedQR; `qr-compact.y4m` is the raw-bytes
@@ -185,7 +127,7 @@ always returns rubbish for `rawValue`, which is not artificial, since a real
 `BarcodeDetector` handed a CompactSeedQR returns mojibake either way.
 
 Two phases, and the first is the point of the file: **camera pointed at a blank
-wall, native claiming a QR on every frame, and the wallet must load nothing at
+wall, native claiming a QR on every frame, and the firmware must load nothing at
 all.** An earlier version fell back to `rawValue` here and reached a real-looking
 fingerprint, `17d9884b`, from pure garbage: a seed that was never in front of
 the camera. If that phase ever passes by reporting a seed, the simulator is
@@ -193,41 +135,40 @@ inventing keys, which is the worst thing a bitcoin-adjacent tool can do. The
 second phase then holds up a real CompactSeedQR and requires the correct seed
 anyway, because jsQR re-reads the frame for its actual bytes.
 
-**`run.py`'s `same_seed` step**, once per firmware: after the scan tests, the
-screen each of that firmware's three runs ended on is compared byte for byte with
-the other two, and then with a committed baseline. One seed, encoded three ways
-and read down two different decoder paths, must end on one rendered fingerprint.
-It has been identical across every run so far, including runs against differently
-built wallet zips, so a difference means something real changed.
+**`test_camera_stall.py`**: a camera that goes quiet mid-scan, and whether the
+page admits it. ScanScreen only polls its buttons after it reads a frame, so a
+scan screen that stops receiving frames is also one nobody can leave, and it
+looks exactly like the firmware has hung. The test stalls the frame loop, requires
+the page to say so under the device, and presses a key to prove the device
+really does ignore it.
+
+**`test_image_entropy.py`**: new seed from a photo, the camera's other mode. The
+single-frame path was once never shimmed and fell through to the real
+`picamera` import; this drives the flow far enough to take a still and show it
+back, and requires that nothing raised on the way.
+
+**`run.py`'s `same_seed` step**: after the scan tests, the screen each of the
+three scan runs ended on is compared with the other two, and then with a
+committed baseline. One seed, encoded three ways and read down two different
+decoder paths, must end on one rendered fingerprint.
 
 What is compared is `scan-screen-*.png`: the 320x240 canvas SeedSigner's own
-renderer drew, read back out of the canvas rather than photographed. The
-whole-page `scan-proof-*.png` screenshots are still written and are the thing to
-look at when this fails, but they are not what is asserted on. A page screenshot
-also holds the title, the amber warning box, the tray labels and the hint line,
-all drawn with whatever fonts the machine has and none of them anything
-`wallet.zip` can influence, so comparing those went red on hosts where nothing
-was wrong: once on a font difference across the whole header, once on five pixels
-differing by one channel value at an antialiased corner of the warning box while
-the device area was byte-identical.
+renderer drew, read back out of the canvas rather than photographed, and it is
+compared as decoded pixels rather than as file bytes, because a newer Chromium
+can encode the same canvas into a different PNG. The whole-page
+`scan-proof-*.png` screenshots are still written and are the thing to look at
+when this fails, but they are not what is asserted on: they also hold the page
+around the device, drawn with whatever fonts the machine has.
 
-Agreeing with each other is not enough; three runs of a wallet that derived the
+Agreeing with each other is not enough; three runs of firmware that derived the
 seed wrongly would agree perfectly. The anchor is a committed capture of
 `SeedFinalizeScreen` showing the BIP39 test vector's master fingerprint
-`b2269592`, and there is one per firmware because the two draw that screen
-differently: stock offers one passphrase button where the fork offers three, so
-the images can never be the same and a single baseline could only ever be
-satisfied by one of them. The seed behind both is the same seed, and the
-fingerprint on both is `b2269592`. Both are committed as pictures rather than as
-digests so that the anchor can be audited by opening it. Regenerate one only when
-the wallet is meant to draw something different, or when the Chromium that
-encodes the PNG changes underneath it:
+`b2269592`, committed as a picture rather than a digest so that it can be
+audited by opening it. Regenerate it only when the firmware is meant to draw
+something different:
 
     python3 test/run.py scan
     cp test/artifacts/scan-screen-qr.png test/baseline/screen-b2269592.png
-
-    python3 test/run.py stock_scan
-    cp test/artifacts/stock-scan-screen-qr.png test/baseline/stock-screen-b2269592.png
 
 and look at the file before committing it. A baseline nobody read anchors
 nothing.
@@ -235,149 +176,24 @@ nothing.
 **`test_passphrase.py`**: the BIP39 passphrase changes the key, not just the
 screen. The published test mnemonic goes in by camera twice, in fresh browser
 contexts: once with no passphrase, once with `abc` entered through the firmware's
-own Type Passphrase keyboard. The wallet's log has to announce the keyboard,
+own Type Passphrase keyboard. The firmware's log has to announce the keyboard,
 return exactly the typed passphrase, reach the review screen and then finalize
 the seed. Both runs export a single-sig native Segwit account at `m/84'/1'/0'`,
-on the simulator's default Testnet, through the wallet's own Export Xpub screens.
+on the simulator's default Testnet, through the firmware's own Export Xpub screens.
 
-Screen names prove the route, not the key. The static QR the wallet draws is read
+Screen names prove the route, not the key. The static QR the firmware draws is read
 back and compared, origin and every character of the `vpub`, against
 `mainnet_reference.py`, which derives both answers independently with and without
 the passphrase. Both fingerprints must match their respective reference roots
 and differ from each other; the account keys must differ too, not just the origin
-labels. A wallet that silently ignores the passphrase cannot pass by reaching a
+labels. Firmware that silently ignores the passphrase cannot pass by reaching a
 convincing-looking review screen.
 
-Smartcard firmware only, one ASCII passphrase and one account path. This does not
+One ASCII passphrase and one account path. This does not
 check Unicode normalization, every keyboard layout, editing or discarding a
-passphrase, scanning one, loading one from a card, or signing with the resulting
+passphrase, scanning one, or signing with the resulting
 key. Nothing here makes a browser safe for real seeds; this mnemonic and
 passphrase are public test inputs and nothing derived from them should hold value.
-
-**`test_tutorial_single.py`** (`tutorial_single` in `run.py`): the actual stock
-single-sig walkthrough, offline, from a newly generated image-entropy seed to a
-signed spend and simulated confirmation. Three fresh contexts cover the wallet
-drawer's prechecked passphrase option, an unchecked start with a late tick after
-the original spend is prepared, and an early runtime tick before seed creation
-finishes. The single tutorial must default to stock without an explicit firmware
-parameter; the registry must restrict single to stock and multisig to smartcard
-and Doomsigner. Picker visibility and selection are exercised in the real wallet
-drawer, not a separately mounted picker.
-
-The late tick must preserve the original account, wallet, UTXO and PSBT, finish
-and confirm the original spend, then discard and optically reload the same seed
-before entering `abc` and completing a second round. Unticking must not destroy
-the queued round; ticking again must not duplicate it. Pause must stop firmware
-screen transitions, One step advances to the prepared spend, and Back at that
-safe home-screen boundary must preserve the existing evidence and resume to a
-successful finish without duplicate claims or broadcasts. Begin again must boot
-fresh firmware, clear the old seed/wallet/spend, preserve single/stock/passphrase,
-and ask for the entropy source again.
-
-The mnemonic comes only from the optically captured `state.seedqr`, with its
-BIP39 checksum checked independently. embit supplies the wordlist, not the
-expected keys: `mainnet_reference.py` derives the fingerprint and entire
-`m/84'/1'/0'` tpub with and without `abc`. The expected descriptor is constructed
-from that reference account; embit independently derives receive/change
-addresses, and reference-derived public-key hashes anchor their scripts too.
-Firmware logs must show image capture, seed finalization, SeedQR backup, account
-export, transaction review and approval, and the passphrase keyboard returning
-exactly `abc`. State labels alone cannot satisfy these checks.
-
-All API calls are intercepted. A fabricated faucet transaction pays the address
-actually claimed, using `embit.script.address_to_scriptpubkey`, at output one
-behind a decoy output. The test captures the actual broadcast POST hex, requires
-the unsigned and signed optical PSBTs to contain the independently constructed
-transaction, and verifies the final witness against reference BIP143/ECDSA:
-correct derivation, SIGHASH_ALL and low-S. Changed signature, output amount and
-passphrase key must each fail verification. Funding and broadcast proof responses
-are fabricated only for transactions the test knows; unknown API requests fail,
-and other external requests are blocked. Static files are served from the local
-test server at the API's origin, never from the public site.
-
-Only tutorial `pace` and `beat` reading delays are disabled. Keypress spacing,
-screen guards, device firmware, QR optics, seed generation and signing remain
-real. This checks the confirmation-handling path, not mining, chain validity or
-real funds. Runtime is intended to fit a roughly five-to-ten-minute suite step,
-but must be measured with the pinned browser; syntax checking alone is not an
-end-to-end pass. The existing multisig test covers the other firmware pickers and
-legacy `tutorial=1` behavior.
-
-**`test_cards_browser.py`**: the same card story as `test_cards.py`, but through
-`wallet.html` and the real tray: an empty reader ends in a warning rather than a
-hang, Card A reaches the Python side with Card A's UID, Card B with a different
-one, and Card A put back is still the same card. The UID in the log is the one
-pysatochip derived from the APDUs the card answered, so it is evidence about what
-the wallet saw rather than about what was clicked.
-
-**`test_cards_seed.py`**: the whole save-a-seed path through the wallet's own
-screens: initialise a blank card with a PIN, scan the BIP39 test vector, hand it
-to the card, then come back later (new connector, new applet selection, new PIN)
-and read extended keys back off it into a wallet descriptor. Two independent
-oracles: the card announces the master fingerprint it derived, which has to be
-the vector's `b2269592`, and the wallet announces the screens it reached, where
-`SeedExportXpubDetailsScreen` is only reachable if pysatochip recovered the right
-key from *both* signatures on *every* answer, since it raises otherwise.
-
-One of its checks asserts a bug on purpose. At the pinned tag the import screen
-cannot report success: `card_bip32_import_seed()` returns the authentikey and
-the view unpacks it as `(response, sw1, sw2)`, so a successful import is what
-raises `TypeError`. The card is seeded either way. The check is there so that the
-day upstream fixes it, this fails and says so.
-
-**`test_cards_seedkeeper.py`** -- the two flows the SeedSigner+ Smartcard is sold
-for, on a **SeedKeeper**, end to end through the wallet's own screens: scan the
-BIP39 test vector, save it to a blank card (which the wallet initialises with a
-PIN on the way), discard it from the wallet entirely, and load it back off the
-card.
-
-Three oracles, and they are independent. The card announces what it stored and
-what it exported, from the Python side of the APDU boundary, and the type,
-subtype, label and length it reports have to be the `Masterseed` layout the wallet
-claims to write. The wallet announces the screens it reached, and getting to the
-seed screen at all means pysatochip recovered the card's authentikey from the
-signature over the header and the secret, because it raises rather than returning
-if it cannot. And the seed the wallet ends up holding is compared, as a digest of
-the device canvas, against the one it held after the scan earlier in the same
-run: one seed, in by camera and back off a card, on one rendered screen. The
-digest is taken from the canvas rather than from a screenshot so that nothing
-about the surrounding page or its fonts can enter into it.
-
-It also reloads the page at the end and requires three factory-fresh SeedKeepers,
-because card state living only in memory is a decision rather than an oversight.
-
-**`test_cards_seedkeeper_descriptor.py`** -- the other flow the card is sold for,
-a **multisig wallet descriptor** travelling on a SeedKeeper instead of being
-scanned. Half of it works, and this file is where the halves are separated.
-
-A 2 of 3 over three published BIP39 vectors goes in by camera, so `2 of 3` and
-three fingerprints on the wallet's own screen say embit really parsed it. Then
-*Save MultiSig Descriptor* is driven to the end: the wallet puts a PIN on the
-blank card, and the card announces what it was handed -- secret type `0xC1`, the
-label the wallet asked for, and 450 bytes for a 448-character descriptor, which
-is the two-byte length a v2 card's layout puts in front of it. The wallet reaches
-its own Success screen and no warning goes up on the way.
-
-*Load MultiSig Descriptor* then hits a wall that is upstream's and has nothing to
-do with which pysatochip is shipped. Every view that reads a SeedKeeper's headers
-by name uses `SEEDKEEPER_DIC_TYPE`, and `smartcard_views.py` imports it inside a
-`try`/`except ImportError` together with three modules that exist in no published
-pysatochip, so the import always fails and every name in it stays undefined. The
-screen raises `NameError: name 'SEEDKEEPER_DIC_TYPE' is not defined` and puts
-that sentence up. The checks are that the warning is what happens, that **the
-card was never asked for the descriptor** and that it refused nothing, so what is
-being asserted is the wallet's failure rather than the simulator's. The three
-missing modules are checked out of the wallet zip in the same run, so the reason
-is evidence and not a story.
-
-This file used to assert that *both* screens were blocked, by
-`KeyError: 'Descriptor'`, and that half was ours: PyPI's pysatochip 0.17.0 has no
-name for `0xC1` and the device does not use PyPI. See the pysatochip note in
-`build/build-wallet-zip.sh`. Everything the card end needs is proved next door in
-`test_cards.py`: the same descriptor stored as type `0xC1`, read back byte for
-byte, its header parsed by pysatochip and its cost checked against upstream's own
-size arithmetic. On the day upstream fixes that import, the load check fails and
-says so.
 
 **`test_mainnet.py`** -- mainnet, on purpose. The simulator ships on Testnet and
 the page shouts when anybody moves it to Mainnet, because a seed typed into a
@@ -386,19 +202,19 @@ actually works here, so this is the file that checks it, and it costs nothing: n
 coins, no network, nothing broadcast.
 
 The device is taken to Mainnet through Settings > Advanced, the published test
-seed goes in by camera, and an account key comes back out through the wallet's
+seed goes in by camera, and an account key comes back out through the firmware's
 own Export Xpub screens at both standard mainnet paths: `m/48'/0'/0'/2'` for
-multisig and `m/84'/0'/0'` for single sig. What the wallet drew is read out of the
+multisig and `m/84'/0'/0'` for single sig. What the firmware drew is read out of the
 QR on its screen and compared, fingerprint and all 111 characters of the key,
-against a key derived in `mainnet_reference.py`. The wallet does all of its work
-with embit; that file never imports embit and never opens a wallet zip, so
+against a key derived in `mainnet_reference.py`. The firmware does all of its work
+with embit; that file never imports embit and never opens a firmware zip, so
 agreement is two implementations that share no code arriving at the same key
-rather than one library agreeing with itself. A wallet still deriving under coin
+rather than one library agreeing with itself. Firmware still deriving under coin
 type `1'` would fail here on the origin alone.
 
 Then a mainnet transaction the test fabricates: an invented UTXO on a transaction
 that does not exist, spent to an address nobody holds the key to. It goes in as a
-base64 PSBT by camera, the wallet is driven through its own review and approve
+base64 PSBT by camera, the firmware is driven through its own review and approve
 screens, and the signed PSBT is read back off the animated QR it displays. The
 signature is then checked offline against a BIP143 sighash computed from the
 transaction the test built: under the key at `m/84'/0'/0'/0/0` and no other,
@@ -411,90 +227,12 @@ everything would have passed the line above them.
 The reel in front of the camera is changed between the seed scan and the PSBT
 scan. Chromium reopens the y4m file when a stream starts, which was measured
 rather than assumed, so replacing it between two scans is what holding up a
-different QR looks like from the wallet's side.
-
-Smartcard firmware only. Both firmwares carry the same embit, and neither the
-export screens nor the signing path is card code, so a second run would spend
-minutes proving the same thing again.
-
-## `test_tutorial.py`: the multisig tutorial, without a network
-
-Three things about the tutorial can be checked offline, and one cannot.
-
-**The coordinator on the page computes the right things.** Nothing in
-`src/web/signet-coordinator.js` is shared with the wallet: it is a second
-implementation of BIP32 public derivation, sortedmulti, P2WSH, bech32 and
-BIP174, written for the browser. So every value it produces is compared against
-**embit**, taken out of the wallet zip, which is the library the device parses
-these with: the 2 of 3 descriptor, the first receive address, the change
-address, the witness script behind them, and the id of the finished
-transaction. embit also signs the coordinator's own PSBT with two of the three
-test seeds, so the finishing half is exercised with signatures the coordinator
-did not make. Two implementations agreeing is worth something; one agreeing with
-itself is not. In the same pass, every code the phone holds up is drawn by
-`qr-encode.js` and read back by jsQR, which is the pair the device's camera path
-actually uses.
-
-**Hands on mode works.** The test presses the buttons itself, in the order the
-panel asks for them, and checks the panel moves on only when the thing it asked
-for has happened. It also hands back mid-step and checks the run finishes the
-card on its own, which is the claim that the two modes are one machine. The
-progress line is checked to be absent while the visitor is driving and back when
-it is not.
-
-**Self driving runs at reading speed, and the visitor can stop it.** The whole
-ceremony used to go past in two minutes, about a third of a second per
-instruction, so the run now waits for what it has just said to be read. The test
-times three consecutive instructions and requires the panel to be moving slower
-than that; then it pauses mid-run and checks nothing moves for eight seconds and
-the progress line keeps what has already happened, presses Step and checks
-exactly one action goes by before it stops again, and presses Play and checks it
-carries on. The failure states below then run on that same page with the reading
-pauses turned off from the test, because getting to the faucet means driving six
-card steps first and every pause on the way is one this file has just measured.
-
-**The failure states are designed.** Bitsaga Signet is broken in the three ways
-it can be broken, from the test rather than from the page: the faucet answers
-"empty", the request is refused outright, and the request is never answered at
-all. Each has to reach a red verdict saying so in words, with a way out, and
-each is photographed. The last one is why the coordinator gives up on a request
-after twenty seconds: a call that never answers would otherwise leave the panel
-waiting for ever with nothing on screen to say so.
-
-It finishes at 360 pixels wide, open drawers and all, and fails if anything
-pushes the page sideways.
-
-What it cannot prove is that a spend confirms on a real chain.
-
-## `test_tutorial_live.py`: and with one
-
-Run it against the deployed site with `--deployed`, which turns both pieces of
-scaffolding off: nothing is served from this checkout and the broadcast goes to
-the real endpoint. That is the run worth trusting before a release, and it is how
-the 2 of 3 confirmed in block 1125 was driven.
-
-
-Not in `run.py`, and not run by CI: it needs the network, it needs Bitsaga
-Signet to be up, and it waits for real blocks. It drives the whole tutorial self
-driving, follows the panel's own step titles, refuses any red verdict, and at
-the end asks Bitsaga Signet's proof endpoint whether the transaction the panel
-says it sent is in a block.
-
-Two pieces of scaffolding, both in `signet_bridge.py`. The page is served **at
-https://bitsaga.be**, which is the only browser origin that API allows, by
-answering that origin from the local server with the two isolation headers; the
-page is this checkout and every call to `signet.bitsaga.be` goes to the real
-host. And `POST /api/broadcast` is answered by the test, because that endpoint
-does not exist on the server yet: it hands the transaction to Fulcrum with the
-same Electrum call the endpoint would use, so the broadcast is real.
-[`docs/SIGNET-API.md`](../docs/SIGNET-API.md) is the endpoint to add. That
-server does not listen on anything public, so `SIGNET_ELECTRUM=host:port` has to
-be set to run this file, and where it does listen is deliberately not written
-down in this repository.
+different QR looks like from the firmware's side.
 
 ## Supporting files
 
-- `harness.py`: where to point the tests, and the log reader they share.
+- `harness.py`: where to point the tests, the log reader they share, and the
+  key-pressing helpers.
 - `mainnet_reference.py`: the other side of every comparison `test_mainnet.py`
   makes. BIP39, BIP32, SLIP-132, BIP143 and ECDSA verification written out from
   the specifications, plus RIPEMD-160, which OpenSSL 3 hides behind its legacy
@@ -502,15 +240,13 @@ down in this repository.
   (`python3 test/mainnet_reference.py`), which prints the published vectors it is
   anchored to: BIP32's test vector 1, one of BIP39's, and RIPEMD-160's own.
 - `serve.py`: a static server that sends COOP and COEP. Without cross-origin
-  isolation `SharedArrayBuffer` is not constructible and the wallet hangs before
+  isolation `SharedArrayBuffer` is not constructible and the firmware hangs before
   it draws anything, so `python3 -m http.server` cannot serve this page at all.
   It overlays several directories so a checkout is served without being copied
   anywhere first.
 - `make_qr_y4m.py`: writes the `.y4m` videos Chromium's fake camera plays,
-  using the wallet's own vendored `qrcode` out of `wallet.zip` so the QR under
-  test is drawn by the library SeedSigner draws one with. The seed is the
-  standard BIP39 test vector "army van defense …", and the multisig descriptor
-  is derived from that vector and two more out of BIP39's own test file, so it
-  is visibly three published seeds rather than a string somebody typed. Nothing
-  about any of them is secret and nothing should ever hold value.
+  using the firmware's own vendored `qrcode` and embit's BIP39 wordlist out of
+  `seedsigner-stock.zip`, so the QR under test is drawn by the library SeedSigner
+  draws one with. The seed is the standard BIP39 test vector "army van defense
+  …". Nothing about it is secret and nothing should ever hold value.
 - `run.py`: the runner described above.

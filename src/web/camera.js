@@ -1,6 +1,6 @@
 // The camera channel, loaded by both the page and the worker.
 //
-// The wallet's Python runs in the worker and is permanently blocked inside the
+// The firmware's Python runs in the worker and is permanently blocked inside the
 // controller's main loop, so the worker can never come back to its event loop to
 // service a postMessage. A SharedArrayBuffer is the only thing that can carry
 // camera data across, the same reason the buttons already use one.
@@ -67,10 +67,8 @@
 
   // ---------------------------------------------------------------- page half
 
-  // options.source, if given, hands back a MediaStream instead of the webcam.
-  // The tutorial passes the phone mock's own canvas: the device's camera is
-  // pointed at the phone's screen, which is a picture on this page, so nothing
-  // below this line changes and no webcam permission is ever asked for.
+  // options.source, if given, is called to open the camera and hands back a
+  // MediaStream. Without it the webcam is asked for directly.
   //
   // options.onTrouble, if given, is called with a sentence whenever the camera
   // is delivering nothing, and with "" once it delivers again. It is a callback
@@ -82,9 +80,6 @@
     var onTrouble = (options && options.onTrouble) || function () {};
     var stream = null;
     var video = null;
-    // A canvas standing in for the camera, when the page handed one over rather
-    // than a stream. Exactly one of this and video is ever set.
-    var still = null;
     var capture = null;
     var preview = null;
     var decoder = null;
@@ -134,7 +129,6 @@
         stream.getTracks().forEach(function (track) { track.stop(); });
         stream = null;
       }
-      still = null;
       if (video) {
         video.srcObject = null;
         video = null;
@@ -194,7 +188,7 @@
     // There is deliberately no falling back to rawValue when jsQR comes up
     // empty. A mis-read string can still be a plausible length, and 16, 20, 24,
     // 28 or 32 bytes is all it takes for DecodeQR to accept it as a
-    // CompactSeedQR -- which means the wallet would load a seed that was never
+    // CompactSeedQR -- which means the firmware would load a seed that was never
     // in front of the camera. A scan that fails and retries is recoverable; a
     // wrong seed presented as right is not. Caught by test_scan_native.py,
     // which used to reach a valid-looking fingerprint from pure garbage.
@@ -275,23 +269,6 @@
       // reason the last one failed.
       Atomics.store(hdr, ERR_LEN, 0);
       return open().then(function (opened) {
-        // A canvas, handed over directly rather than as a MediaStream.
-        //
-        // The substitutes on this page are all canvases: the tutorial's picture
-        // for the device to photograph, the wallet panel's QR held up for it to
-        // scan. Turning one into a stream needs canvas.captureStream, which
-        // Safari does not have, and the tutorial called it unguarded: on an
-        // iPhone the call threw, this layer reported that it could not open a
-        // camera, and the device put up Hardware Error while the page advised
-        // allowing a camera nobody had asked for. Nothing needed a stream in the
-        // first place. drawImage takes a canvas exactly as it takes a video, so
-        // the canvas is the frame source and there is no video element at all.
-        if (opened && typeof opened.getContext === "function") {
-          still = opened;
-          stream = null;
-          video = null;
-          return null;
-        }
         stream = opened;
         video = document.createElement("video");
         video.playsInline = true;
@@ -301,7 +278,6 @@
         video.srcObject = stream;
         return video.play();
       }).then(function () {
-        if (still) return null;
         return new Promise(function (resolve) {
           if (video.videoWidth) return resolve();
           video.addEventListener("loadedmetadata", function () { resolve(); }, { once: true });
@@ -327,10 +303,9 @@
       }).catch(fail);
     }
 
-    // Whichever of the two is in play, and how big it is. drawImage takes either.
-    function frameSource() { return still || video; }
-    function frameW() { return still ? still.width : (video ? video.videoWidth : 0); }
-    function frameH() { return still ? still.height : (video ? video.videoHeight : 0); }
+    function frameSource() { return video; }
+    function frameW() { return video ? video.videoWidth : 0; }
+    function frameH() { return video ? video.videoHeight : 0; }
 
     function publishFrame() {
       preview.ctx.drawImage(frameSource(), 0, 0, PREVIEW_W, PREVIEW_H);
@@ -428,7 +403,7 @@
       },
 
       // Parks until the page publishes a frame the worker has not seen, so the
-      // wallet's scan loop runs at the camera's pace instead of spinning.
+      // firmware's scan loop runs at the camera's pace instead of spinning.
       frame: function (timeoutMs) {
         var seq = Atomics.load(hdr, FRAME_SEQ);
         if (seq === lastFrame) {

@@ -5,7 +5,7 @@ This is the one shape of camera trouble the device cannot report for itself.
 ScanScreen's loop reads a frame and then, inside `if frame is not None`, polls
 its buttons; there is no else. So a scan screen that stops receiving frames is
 also a scan screen nobody can leave: every press is ignored, nothing is drawn,
-and it looks exactly like the wallet has hung. Failing to *open* the camera is
+and it looks exactly like the firmware has hung. Failing to *open* the camera is
 already covered -- the shim raises CameraConnectionError and the device draws
 its own error screen -- and this test asserts that difference rather than
 assuming it, because the fix would be pointless if the device already spoke up.
@@ -31,7 +31,7 @@ from harness import Log, check, report
 
 from playwright.sync_api import sync_playwright
 
-SHOT = harness.firmware_artifact("camera-stall.png")
+SHOT = harness.artifact("camera-stall.png")
 
 # 66 is the camera loop's own tick, and nothing else on the page schedules one.
 FREEZE = """
@@ -72,8 +72,8 @@ def main() -> int:
         page.add_init_script(FREEZE)
         log = Log(page)
 
-        page.goto(harness.wallet_url())
-        log.wait(r"display\(\) enter: MainMenuScreen", 240, "the wallet to boot")
+        page.goto(harness.sim_url())
+        log.wait(r"display\(\) enter: MainMenuScreen", 240, "the firmware to boot")
 
         # Scan is the first button on the home screen and starts selected.
         press(page, "Enter")

@@ -19,7 +19,7 @@
 #
 # It only ever reads. It does not regenerate the manifest for you, and it must
 # not: a hook that quietly fixed the file would turn every unintended change to
-# a served file or a simulated card into a blessed one, and blessing those
+# a served file or a packaged stand-in into a blessed one, and blessing those
 # silently is the failure the manifest exists to prevent. It says which files
 # disagree and which command to run; running it is a decision.
 

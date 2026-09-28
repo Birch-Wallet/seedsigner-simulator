@@ -7,7 +7,7 @@ import harness
 import mainnet_reference as reference
 from harness import Log, check, report
 from make_qr_y4m import MNEMONIC
-from test_cards_browser import press
+from harness import press
 from test_mainnet import compared, expected_xpub_string, export_xpub, wait_screen
 
 from playwright.sync_api import sync_playwright
@@ -52,8 +52,8 @@ def main() -> int:
             )
             page = context.new_page()
             log = Log(page)
-            page.goto(harness.wallet_url(firmware="smartcard"))
-            window = wait_screen(log, "MainMenuScreen", 0, "the wallet to boot", 300)
+            page.goto(harness.sim_url())
+            window = wait_screen(log, "MainMenuScreen", 0, "the firmware to boot", 300)
             press(page, "Enter")
             window = wait_screen(log, "ScanScreen", window, "the scanner")
             window = wait_screen(log, "SeedFinalizeScreen", window, "the decoded seed", 180)
@@ -73,6 +73,8 @@ def main() -> int:
                 window = wait_screen(log, "SeedReviewPassphraseScreen", window,
                                      "the passphrase review", 120)
                 check("the firmware accepts the exact passphrase and reaches review", True)
+                # The review screen offers Edit passphrase first and Done second.
+                press(page, "ArrowDown")
 
             press(page, "Enter")
             wait_screen(log, "SeedOptionsScreen", window, "the finalized seed", 120)
@@ -94,7 +96,7 @@ def main() -> int:
 
         check("the passphrase export is not the independently computed bare-seed export",
               exported[PASSPHRASE] is not None and exported[PASSPHRASE] != expected[""])
-        check("the wallet exported different keys, not just different fingerprints",
+        check("the firmware exported different keys, not just different fingerprints",
               all(exported.values())
               and exported[""].split("]", 1)[-1] != exported[PASSPHRASE].split("]", 1)[-1])
         browser.close()

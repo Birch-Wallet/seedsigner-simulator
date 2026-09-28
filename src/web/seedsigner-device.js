@@ -4,8 +4,7 @@
  * Drawn from the hardware, not invented: a landscape stadium shell with fully
  * semicircular end caps, a square-ish display behind a pale LCD frame set into a
  * dark well, five cream pill keys in a D-pad diamond on the left, three more
- * stacked on the right, and a smartcard standing proud of the front edge beside
- * the microSD slot. An earlier pass drew a portrait handheld with a rubber ring
+ * stacked on the right, and the microSD slot. An earlier pass drew a portrait handheld with a rubber ring
  * pad and a speaker grille; none of that is on the real device.
  *
  * Standalone on purpose: nothing here touches SharedArrayBuffer, a worker or a
@@ -33,8 +32,8 @@
   var STYLE_ID = "ssd-style";
   var instances = 0;
 
-  // Index into the wallet's BUTTON_NAMES. Mirrored rather than imported so this
-  // file keeps no wallet dependency.
+  // Index into the firmware's BUTTON_NAMES. Mirrored rather than imported so this
+  // file keeps no firmware dependency.
   var CHANNEL = {
     up: 1, down: 2, left: 3, right: 4, select: 5, key1: 6, key2: 7, key3: 8,
   };
@@ -188,7 +187,7 @@
    * Centring either cluster in its gutter is the single thing that made earlier
    * passes read as a games console rather than as this device.
    */
-  function layout(screenW, screenH, scale, withCard) {
+  function layout(screenW, screenH, scale) {
     var sw = Math.round(screenW * scale);
     var sh = Math.round(screenH * scale);
     var u = sh / 480;                    // one design unit; the art is pure ratio
@@ -211,16 +210,9 @@
     L.bodyH = L.railT + L.well.t + sh + L.well.b + L.railB;
     L.radius = L.bodyH / 2;              // a true stadium, not a rounded rect
 
-    // The card standing out of the front edge sets the bottom padding, so an
-    // empty reader gets that vertical space back rather than reserving it.
-    L.withCard = withCard;
-    L.cardW = 500 * u;
-    L.cardH = 300 * u;
-    L.cardBite = 44 * u;                 // how far its top hides inside the shell
-
     L.padX = 12 * u;
     L.padT = 22 * u;
-    L.padB = withCard ? L.cardH - L.cardBite + 44 * u : 58 * u;
+    L.padB = 58 * u;
 
     L.bodyX = L.padX;
     L.bodyY = L.padT;
@@ -241,9 +233,6 @@
     // edge of the shell. Scales with the shell, so the effect is the same
     // photograph at any rendered size.
     L.lift = 5.5 * u;
-
-    L.cardX = L.bodyX + L.bodyW * 0.53 - L.cardW / 2;
-    L.cardY = L.bodyY + L.bodyH - L.cardBite;
     return L;
   }
 
@@ -357,14 +346,6 @@
       '<stop offset=".5" stop-color="#ffffff" stop-opacity=".015"/>',
       '<stop offset="1" stop-color="#ffffff" stop-opacity="0"/>',
       "</linearGradient>",
-      // The smartcard: dark matte PVC catching the same key light.
-      '<linearGradient id="', id, '-card" ', space,
-      ' x1="', n(L.cardX), '" y1="', n(L.cardY), '" x2="', n(L.cardX + L.cardW),
-      '" y2="', n(L.cardY + L.cardH), '">',
-      '<stop offset="0" stop-color="#2e3238"/>',
-      '<stop offset=".45" stop-color="#1e2126"/>',
-      '<stop offset="1" stop-color="#131518"/>',
-      "</linearGradient>",
       '<linearGradient id="', id, '-wellTop" x1="0" y1="0" x2="0" y2="1">',
       '<stop offset="0" stop-color="#000000" stop-opacity=".85"/>',
       '<stop offset="1" stop-color="#000000" stop-opacity="0"/>',
@@ -396,28 +377,6 @@
       "</filter>",
       "</defs>",
     ].join("");
-  }
-
-  // Drawn before the shell so the front edge overlaps its top: the card is
-  // inserted, not resting on top.
-  function cardArt(id, L) {
-    var u = L.u, out = [];
-    var r = 10 * u;
-
-    out.push('<ellipse cx="', n(L.cardX + L.cardW / 2), '" cy="', n(L.cardY + L.cardH),
-      '" rx="', n(L.cardW * 0.46), '" ry="', n(9 * u),
-      '" fill="#000000" opacity=".55" filter="url(#', id, '-contact)"/>');
-
-    out.push('<rect x="', n(L.cardX), '" y="', n(L.cardY), '" width="', n(L.cardW),
-      '" height="', n(L.cardH), '" rx="', n(r), '" fill="url(#', id, '-card)"/>');
-    out.push('<rect x="', n(L.cardX), '" y="', n(L.cardY), '" width="', n(L.cardW),
-      '" height="', n(L.cardH), '" rx="', n(r),
-      '" fill="none" stroke="#000000" stroke-opacity=".5" stroke-width="', n(1.8 * u), '"/>');
-    // Top-left lit lip, the only edge of the card facing the key light.
-    out.push('<path d="M', n(L.cardX + r), ' ', n(L.cardY), 'H', n(L.cardX + L.cardW - r),
-      'M', n(L.cardX), ' ', n(L.cardY + L.cardH - r), 'V', n(L.cardY + r),
-      '" fill="none" stroke="#ffffff" stroke-opacity=".12" stroke-width="', n(1.6 * u), '"/>');
-    return out.join("");
   }
 
   function bodyArt(id, L) {
@@ -604,20 +563,18 @@
     var screenH = o.screenHeight > 0 ? o.screenHeight : 240;
     var scale = o.scale > 0 ? o.scale : 2;
     var live = o.interactive !== false;
-    var withCard = o.card !== false;
     var onKey = typeof o.onKey === "function" ? o.onKey : null;
 
     injectStyle();
     var id = "ssd" + (++instances);   // gradients and filters must not collide
-    var L = layout(screenW, screenH, scale, withCard);
+    var L = layout(screenW, screenH, scale);
 
     var svg = [
       '<svg class="ssd-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ',
       n(L.viewW), " ", n(L.viewH), '" preserveAspectRatio="xMidYMid meet" role="img"',
       live ? "" : ' aria-hidden="true"', ">",
-      "<title>SeedSigner Plus hardware wallet</title>",
+      "<title>SeedSigner Plus signing device</title>",
       defs(id, L),
-      withCard ? cardArt(id, L) : "",
       bodyArt(id, L),
       screenArt(id, L),
       padArt(id, L, live),
@@ -631,7 +588,7 @@
     var slotStyle = "left:" + pct(L.screenX, L.viewW) + ";top:" + pct(L.screenY, L.viewH) +
       ";width:" + pct(L.sw, L.viewW) + ";height:" + pct(L.sh, L.viewH) +
       ";border-radius:" + n(4 / L.viewW * 100) + "%";
-    // Glass last and inert: it must never eat a click or hide the wallet's pixels.
+    // Glass last and inert: it must never eat a click or hide the firmware's pixels.
     var glassStyle = slotStyle +
       ";background:linear-gradient(115deg,rgba(255,255,255,.075) 0%," +
       "rgba(255,255,255,.045) 13%,rgba(255,255,255,.012) 22%,rgba(255,255,255,0) 30%," +
@@ -666,10 +623,10 @@
     /**
      * Show a press nobody's finger made.
      *
-     * The tutorial drives this device through the same channel the wallet reads
-     * GPIO on, which is invisible: the screen changed and nothing said which of
-     * the eight keys did it. This is the same class a finger puts on, held a
-     * little longer because there is no finger to lift off it.
+     * Keyboard presses drive this device through the same channel the firmware
+     * reads GPIO on, which is invisible: the screen changed and nothing said
+     * which of the eight keys did it. This is the same class a finger puts on,
+     * held a little longer because there is no finger to lift off it.
      *
      * A key already down is left alone, so this cannot cut a real press short.
      */

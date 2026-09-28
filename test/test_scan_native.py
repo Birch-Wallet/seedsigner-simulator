@@ -13,13 +13,13 @@ because raw entropy bytes are not text and rawValue is all it can express.
 Two phases, and the first is the one that matters:
 
   refuse  camera pointed at a blank wall. Native claims a QR on every frame. The
-          wallet must load nothing at all. An earlier version fell back to
+          firmware must load nothing at all. An earlier version fell back to
           rawValue here and reached a real-looking fingerprint, 17d9884b, from
           pure garbage -- a seed that was never in front of the camera. If this
           phase ever goes green by reporting a seed, the simulator is inventing
           keys, and that is the worst thing a bitcoin-adjacent tool can do.
   decode  the CompactSeedQR. Native claims a QR, rawValue is still rubbish, and
-          the wallet must still arrive at the right seed, because jsQR re-read
+          the firmware must still arrive at the right seed, because jsQR re-read
           the frame for its actual bytes.
 """
 
@@ -32,10 +32,10 @@ from harness import Log, check, report
 
 from playwright.sync_api import sync_playwright
 
-SHOT = harness.firmware_artifact("scan-proof-native-compact.png")
+SHOT = harness.artifact("scan-proof-native-compact.png")
 # The device's screen on its own, which is what run.py's same_seed step compares
 # against the two jsQR scans. The screenshot beside it is for looking at.
-SCREEN = harness.firmware_artifact("scan-screen-native-compact.png")
+SCREEN = harness.artifact("scan-screen-native-compact.png")
 
 # 24 bytes once UTF-8 encoded, which DecodeQR would accept as a CompactSeedQR
 # length. Chosen to be exactly the shape of payload that used to slip through.
@@ -54,8 +54,8 @@ window.BarcodeDetector = class {
 
 FINALIZE = r"display\(\) enter: SeedFinalizeScreen"
 
-# Long enough for the fake camera to loop the blank video several times, so a
-# wallet that was going to invent something has had every chance to.
+# Long enough for the fake camera to loop the blank video several times, so
+# firmware that was going to invent something has had every chance to.
 REFUSE_WATCH_MS = 20000
 
 
@@ -71,7 +71,7 @@ def open_scanner(p, y4m):
     page = context.new_page()
     log = Log(page)
 
-    page.goto(harness.wallet_url())
+    page.goto(harness.sim_url())
     log.wait(r"display\(\) enter: MainMenuScreen", 240, "boot")
     page.keyboard.press("Enter")
     line = log.wait(r"\[cam\] .*decoding with (\S+)", 90, "the camera")

@@ -9,7 +9,7 @@
 # This is the only thing in the repository that writes that file. The build does
 # not, the test suite does not, the git hook does not: a manifest that a build
 # updates for you is a manifest that blesses whatever it finds, and the whole
-# reason this one exists is that a modified simulated card has to fail loudly
+# reason this one exists is that a modified stand-in has to fail loudly
 # rather than quietly produce a different zip. So the bookkeeping is one command
 # a person runs on purpose, and the diff it produces is the record that somebody
 # meant it. Everything else only ever reads and compares.
@@ -78,26 +78,18 @@ fi
 # manifest still described the set from that morning, and a list of names would
 # have gone stale exactly the same way. A directory cannot.
 #
-# src/web and src/shims are what a visitor is served as it stands. src/smartcard
-# and src/fakes are copied whole into a wallet zip by build/build-wallet-zip.sh,
-# so a file added to one of them changes that zip's hash.
+# src/web and src/shims are what a visitor is served as it stands. src/fakes is
+# copied whole into the firmware zip by build/build-firmware-zip.sh, so a file added
+# to it changes that zip's hash.
 #
 # Excluded: src/web/pyodide-e24b45d3, which is 26 MB of fetched runtime that
 # build/fetch-assets.sh hash-checks where it fetches it and .gitignore keeps out
 # of the repository, and __pycache__, which is generated and which the build
 # refuses to package anyway.
-#
-# DOOM is excluded for the same reason and it matters more here, because these
-# land in src/web itself rather than in a directory of their own: doom.js,
-# doom.wasm and doom-run.js are built by build/build-doom-wasm.sh from a pinned
-# doomgeneric, and the WAD is fetched from Freedoom's own release. Both are
-# hash-checked where they are produced and both are gitignored. Left in, this
-# manifest would say one thing on a machine that had built the game and another
-# on a machine that had not, which is the one thing a manifest may never do.
-# doom-boot.js is not excluded: it is this repository's own source.
+
 
 SERVED_DIRS="src/web src/shims"
-PACKAGED_DIRS="src/smartcard src/fakes"
+PACKAGED_DIRS="src/fakes"
 
 list_dirs() {
     local dir
@@ -106,9 +98,7 @@ list_dirs() {
         find "${ROOT}/${dir}" \
              -name '__pycache__' -prune -o \
              -path "${ROOT}/src/web/pyodide-e24b45d3" -prune -o \
-             -type f ! -name '*.pyc' \
-                     ! -name 'doom.js' ! -name 'doom.wasm' \
-                     ! -name 'doom-run.js' ! -name '*.wad' -print
+             -type f ! -name '*.pyc' -print
     done | while IFS= read -r file; do
         printf '%s\n' "${file#"${ROOT}/"}"
     done | LC_ALL=C sort
@@ -135,8 +125,8 @@ generate() {
 # supposed to stop somebody rather than be tidied away. Regenerating is a
 # command a person runs, and the diff is the evidence they meant it.
 #
-# Everything fetched is already content-addressed where it is fetched: the wallet
-# and its Python dependencies by build/build-wallet-zip.sh, the Pyodide runtime
+# Everything fetched is already content-addressed where it is fetched: the firmware
+# and its Python dependencies by build/build-firmware-zip.sh, the Pyodide runtime
 # by build/fetch-assets.sh. This file is the other half, the files that live in
 # the repository and are served or packaged as they are. Without it "you can read
 # all of it" is a claim about a moving target; with it, a change to any of them
@@ -155,7 +145,7 @@ generate() {
 #
 # Both directions are checked, because they are the same mistake: a file that
 # changed and a file that was added and listed nowhere both reach a visitor
-# unannounced. build/build-wallet-zip.sh asks both questions of the packaged
+# unannounced. build/build-firmware-zip.sh asks both questions of the packaged
 # directories below before it stages either into a zip, and refuses to package a
 # file that is not listed here at all.
 HEADER
@@ -164,9 +154,9 @@ HEADER
 
 # Served as they stand. src/web is the page, its scripts and its icons; src/shims
 # is the Python the page fetches at boot and writes into Pyodide's filesystem,
-# including the shim that hands back a decoded QR payload. Verifying a wallet zip
+# including the shim that hands back a decoded QR payload. Verifying a firmware zip
 # says nothing about any of them, and they are the code that decides what the
-# wallet is shown.
+# firmware is shown.
 #
 # jsQR 1.4.0, Apache-2.0, is the file published as dist/jsQR.js in the npm
 # package jsqr@1.4.0, unmodified. To confirm that independently, and not just
@@ -179,13 +169,12 @@ SERVED
 
     cat <<'PACKAGED'
 
-# The stand-in packages, which build/build-wallet-zip.sh copies out of the working
-# tree and into a wallet zip whole. Every other input to that zip is pinned by a
+# The stand-in packages, which build/build-firmware-zip.sh copies out of the working
+# tree and into a firmware zip whole. Every other input to that zip is pinned by a
 # commit sha or an artifact sha256, so these were the one way its bytes could move
-# without anything saying so: edit the simulated card, get a different zip, and
-# the only evidence was the hash it no longer matched. Both directories in full,
-# not just the files that happen to be staged, because a file added to one of them
-# lands in the zip too.
+# without anything saying so: edit a stand-in, get a different zip, and the only
+# evidence was the hash it no longer matched. The directory in full, not just the
+# files that happen to be staged, because a file added to it lands in the zip too.
 
 PACKAGED
     hash_lines "${PACKAGED_DIRS}"

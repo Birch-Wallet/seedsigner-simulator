@@ -1,15 +1,15 @@
 """
-Static server that sends the two headers the wallet cannot run without.
+Static server that sends the two headers the firmware cannot run without.
 
 Without COOP same-origin and COEP require-corp the page is not cross-origin
-isolated, SharedArrayBuffer is not constructible, and the wallet hangs before it
+isolated, SharedArrayBuffer is not constructible, and the firmware hangs before it
 draws anything: both the keyboard and the camera reach the worker through one.
 A plain `python3 -m http.server` therefore does not work for this page at all.
 
 Several roots can be given and the first one holding a file wins. That is how a
 checkout is served without being copied anywhere first: the page and its scripts
 live in src/web, the Python shims the worker fetches live in src/shims, and the
-two big build outputs (wallet.zip and the Pyodide runtime) are downloaded into
+two big build outputs (the firmware zip and the Pyodide runtime) are downloaded into
 somewhere else again. Overlaying them means no staging directory to keep in sync
 and no stale copy to serve by accident.
 
@@ -28,7 +28,7 @@ class IsolatedHandler(SimpleHTTPRequestHandler):
     # Python only learned .wasm in 3.11, and Pyodide starts with
     # WebAssembly.instantiateStreaming, which rejects anything that does not
     # arrive as application/wasm. Older interpreters would serve it as
-    # octet-stream and the wallet would never boot.
+    # octet-stream and the firmware would never boot.
     extensions_map = {
         **SimpleHTTPRequestHandler.extensions_map,
         ".wasm": "application/wasm",

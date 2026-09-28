@@ -1,10 +1,10 @@
 """
 The device art as a control: what a thumb can press, and how big it gets.
 
-Everything here is about the shell in front of the wallet rather than about the
-wallet, so nothing waits for Python: the art is drawn before the worker has
+Everything here is about the shell in front of the firmware rather than about the
+firmware, so nothing waits for Python: the art is drawn before the worker has
 finished fetching anything, and this file is seconds rather than minutes. The
-keyboard is left to the rest of the suite, which drives every wallet through it
+keyboard is left to the rest of the suite, which drives the firmware through it
 and would notice at once if it stopped working.
 
 Two things are being pinned down.
@@ -23,7 +23,7 @@ phone's width draws keys about 23 pixels across, which is not a thumb target.
 The page offers a mode where the device takes the whole viewport, fitted to its
 height as well as its width, so that turning the phone sideways is what makes
 the keys big. This checks both halves of that, in both orientations, and that
-the wallet's own 320x240 screen keeps its shape throughout, since the tests
+the firmware's own 320x240 screen keeps its shape throughout, since the tests
 that compare it are comparing pixels.
 """
 
@@ -40,8 +40,8 @@ PHONE = {"width": 360, "height": 780}
 PHONE_SIDEWAYS = {"width": 780, "height": 360}
 DESKTOP = {"width": 1200, "height": 900}
 
-# A second device, rendered by the same call wallet.html makes, with an onKey
-# that only counts. Nothing is sent to the wallet, so what a press does is not
+# A second device, rendered by the same call index.html makes, with an onKey
+# that only counts. Nothing is sent to the firmware, so what a press does is not
 # in the way of asking whether a press happened.
 PROBE = """
 () => {
@@ -51,7 +51,7 @@ PROBE = """
   document.body.appendChild(box);
   window.__presses = [];
   window.SeedSignerDevice.render(box, {
-    screenWidth: 320, screenHeight: 240, interactive: true, card: false,
+    screenWidth: 320, screenHeight: 240, interactive: true,
     onKey: (channel) => window.__presses.push(channel),
   });
 }
@@ -75,7 +75,7 @@ def main() -> int:
         page = context.new_page()
         errors = []
         page.on("pageerror", lambda e: errors.append(str(e)))
-        page.goto(harness.wallet_url())
+        page.goto(harness.sim_url())
         page.wait_for_selector("#device .ssd-svg")
 
         # --- the order of the page, top to bottom ----------------------------
@@ -195,7 +195,7 @@ def main() -> int:
         # a finger can be asked to hit.
         check("which is what makes the keys thumb sized", key_size() >= 44,
               f"{key_size():.0f}px, was {in_page:.0f}px in the page")
-        check("the wallet's screen keeps its 4:3 shape, unstretched",
+        check("the firmware's screen keeps its 4:3 shape, unstretched",
               abs(screen_shape() - 4 / 3) < 0.02, f"{screen_shape():.3f}")
         page.screenshot(path=harness.artifact("device-360-fullscreen.png"))
 
@@ -233,7 +233,7 @@ def main() -> int:
         check("and so does the control that opened it",
               not page.evaluate("() => document.body.classList.contains('solo')")
               and page.locator("#fullscreen").get_attribute("aria-pressed") == "false")
-        check("focus went back to the page so the wallet keeps the keyboard",
+        check("focus went back to the page so the firmware keeps the keyboard",
               page.evaluate("document.activeElement === document.body"),
               page.evaluate("document.activeElement.tagName"))
 

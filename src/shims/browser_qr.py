@@ -4,7 +4,7 @@ Make the screens that display a QR actually draw one.
 QRDisplayScreen puts every pixel of its output inside QRDisplayThread, and its
 _run() does nothing but block waiting for a button. This port has no threads --
 the shim standing in for threading.Thread drops anything loop-shaped -- so that
-thread never runs and every QR the wallet wants to show comes out blank:
+thread never runs and every QR the firmware wants to show comes out blank:
 exported xpubs, signed PSBTs, SeedQR backups, addresses. The flow appears to
 work and hands back an empty screen.
 

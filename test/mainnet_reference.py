@@ -1,4 +1,4 @@
-"""Bitcoin worked out here, so the wallet's answers have something to be wrong against.
+"""Bitcoin worked out here, so the firmware's answers have something to be wrong against.
 
 test_mainnet.py drives the simulator to mainnet, exports an xpub through the
 device's own screens and has it sign a transaction. Neither of those is worth
@@ -7,10 +7,10 @@ that somewhere else: BIP39, BIP32, the SLIP-132 version bytes, the BIP143
 sighash and ECDSA verification, written out from the specifications with nothing
 but hashlib underneath.
 
-Nothing here imports embit, and nothing here reads wallet.zip. That is the whole
-point. The wallet derives with embit and signs with embit; if this file also did,
-the test would be embit agreeing with itself and would pass just as happily on a
-wallet that derived every key wrongly in the same way.
+Nothing here imports embit, and nothing here reads the firmware zip. That is the whole
+point. The firmware derives with embit and signs with embit; if this file also did,
+the test would be embit agreeing with itself and would pass just as happily on
+firmware that derived every key wrongly in the same way.
 
 RIPEMD-160 is written out rather than taken from hashlib, for two reasons. It is
 the one hash that OpenSSL 3 hides behind its legacy provider, so hashlib.new()
@@ -223,7 +223,7 @@ def base58check(payload: bytes) -> str:
 
 # --- BIP39 and BIP32 ---------------------------------------------------------
 # hashlib's PBKDF2 is the one thing here that is somebody else's code, and it is
-# a different somebody: under Pyodide the wallet has no OpenSSL at all and runs
+# a different somebody: under Pyodide the firmware has no OpenSSL at all and runs
 # pycryptodome's PBKDF2 instead, so even this is not a shared code path.
 
 def bip39_seed(mnemonic: str, passphrase: str = "") -> bytes:
@@ -432,7 +432,7 @@ def read_psbt(data: bytes):
 
     Enough of BIP174 to check what came back: the transaction, so it can be
     compared with the one that went in, and the partial signatures, which are
-    what the wallet was asked for.
+    what the firmware was asked for.
     """
     if not data.startswith(PSBT_MAGIC):
         raise ValueError("not a PSBT")

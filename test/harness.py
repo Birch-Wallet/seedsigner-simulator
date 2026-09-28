@@ -1,17 +1,15 @@
 """
-Shared plumbing for the tests: where to point them, and how to read the wallet's
+Shared plumbing for the tests: where to point them, and how to read the firmware's
 own log.
 
-The log is the oracle for almost everything here. The wallet narrates every
+The log is the oracle for almost everything here. The firmware narrates every
 screen it puts up ("display() enter: <ScreenName>"), the camera says which
-decoder it chose, and the simulated card layer says which card the Python side
-saw. Asserting on those lines is a statement about what the wallet actually did,
+decoder it chose. Asserting on those lines is a statement about what the firmware actually did,
 which a screenshot is not.
 
-The page reads that narration itself now and so always asks the worker for it,
-but only ?debug=1 puts it on the console, which is where these tests read it
-from, so wallet_url() always adds it. Without it every test in this suite would
-sit and time out against a wallet that is working perfectly.
+Only ?debug=1 asks the worker for that narration and puts it on the console,
+which is where these tests read it from, so sim_url() always adds it. Without it every test in this suite would
+sit and time out against firmware that is working perfectly.
 """
 
 import base64
@@ -33,15 +31,11 @@ BASE_URL = os.environ.get("SIM_URL", f"http://127.0.0.1:{PORT}").rstrip("/")
 # an input to anything else, so it can be deleted at any time.
 ARTIFACT_DIR = os.environ.get("SIM_ARTIFACT_DIR", os.path.join(REPO, "test", "artifacts"))
 
-# Which firmware these tests drive. Two wallet zips are built and the page picks
-# one by name with ?firmware=; "smartcard" is the 3rdIteration fork the
-# simulator has always run, "stock" is SeedSigner as its own project publishes
-# it. Set SIM_FIRMWARE to switch a single test file over; run.py sets it for the
-# stock half of the suite.
-FIRMWARE = os.environ.get("SIM_FIRMWARE", "smartcard")
+# The firmware the page runs, built by build/build-firmware-zip.sh.
+FIRMWARE_ZIP = "seedsigner-stock.zip"
 
-# The build outputs, none of which is committed. build/build-wallet-zip.sh
-# assembles a wallet zip per firmware from its pinned upstream SeedSigner commit
+# The build outputs, none of which is committed. build/build-firmware-zip.sh
+# assembles the firmware zip from its pinned upstream SeedSigner commit
 # and leaves it in build/out; build/fetch-assets.sh downloads the Pyodide
 # runtime into src/web/pyodide-e24b45d3. Both are looked for in a list rather
 # than at one path, so a deploy that puts everything in one directory still
@@ -69,36 +63,16 @@ def find_asset(name):
 
 
 
-# The analytics endpoints are served by the site, not by this repository: a
-# clone serves no /mt.js and no /mt.php, which is a state wallet-track.js is
-# written to survive silently. The browser still logs the failed fetch as a
-# console error, so the two are dropped here rather than left to fail every
-# suite that asks whether the page had a clean run. Anything else is kept.
-ANALYTICS = ("/mt.js", "/mt.php")
-
-
 def page_error(message):
-    """Is this console message a real problem, rather than the missing tracker?
+    """Is this console message a real problem? Every one is, now that the page
+    loads nothing it does not serve itself. Kept as the one place to say so."""
+    return True
 
-    The URL is in the message's location rather than its text: a failed fetch
-    logs "Failed to load resource: the server responded with a status of 404"
-    and nothing else, so matching on the text alone drops nothing at all.
-    """
-    url = (message.location or {}).get("url", "")
-    return not any(path in url for path in ANALYTICS)
 
-def wallet_url(page="wallet.html", **params):
-    """A URL for the simulator, with tracing on and the firmware named.
-
-    And past the game. The page boots into DOOM and only fetches the wallet when
-    KEY1, KEY2, KEY3 is pressed, which is the device's own behaviour and exactly
-    what this suite does not want: every test here is about the firmware, and
-    without this each of them would sit and time out in front of a game. A test
-    that wants the game asks for it by building its own URL.
-    """
+def sim_url(page="index.html", **params):
+    """A URL for the simulator, with tracing on: ?debug=1 is what puts the
+    firmware's narration on the console, which is what these tests read."""
     params.setdefault("debug", "1")
-    params.setdefault("wallet", "1")
-    params.setdefault("firmware", FIRMWARE)
     return f"{BASE_URL}/{page}?{urlencode(params)}"
 
 
@@ -108,28 +82,16 @@ def artifact(name):
     return os.path.join(ARTIFACT_DIR, name)
 
 
-def firmware_artifact(name):
-    """artifact(), with the firmware in the name so two runs of the same test
-    against two firmwares do not overwrite each other's evidence.
-
-    The smartcard run keeps the bare names it has always written, because the
-    baseline image and everything referring to these files by name predates the
-    second firmware and there is no reason to churn it.
-    """
-    return artifact(name if FIRMWARE == "smartcard" else f"{FIRMWARE}-{name}")
-
-
 def save_screen(page, path):
-    """Write the device's screen, at the 320x240 the wallet drew it.
+    """Write the device's screen, at the 320x240 the firmware drew it.
 
     Not a screenshot. A screenshot of the page also holds the title, the warning
-    box, the card tray and the hint line, all of them rendered with whatever
-    fonts the machine has and none of them anything the wallet can influence; a
+    box and the hint line, all of them rendered with whatever
+    fonts the machine has and none of them anything the firmware can influence; a
     screenshot of the canvas element holds whatever CSS scaled it to, and those
     scaled edge pixels move by one when anything else on the page changes
     height. Reading the canvas's own pixels instead gets exactly the bytes
-    SeedSigner's renderer put there and nothing else, which is the same reason
-    test_cards_seedkeeper.py digests the canvas rather than an image of it.
+    SeedSigner's renderer put there and nothing else.
     """
     data_url = page.evaluate(
         "() => document.getElementById('screen').toDataURL('image/png')")
@@ -161,7 +123,7 @@ def report():
     return 0
 
 
-# --- reading the wallet's log ------------------------------------------------
+# --- reading the firmware's log ------------------------------------------------
 
 
 class Log:
@@ -213,3 +175,30 @@ class Log:
         for line in self.lines:
             if needle in line:
                 print("  " + line)
+
+
+def press(page, key, times=1):
+    """Press a device key through the page's keyboard, with room for the firmware
+    to answer between presses."""
+    for _ in range(times):
+        page.keyboard.press(key)
+        page.wait_for_timeout(220)
+
+
+def back_to_home(page, log):
+    """Climb the back stack until the home screen is up again.
+
+    Up walks off the top of a list or a keyboard onto the top nav's back arrow,
+    and a click there returns RET_CODE__BACK_BUTTON. It is the one gesture that
+    works on every screen a test can land on. Home is the one screen with no back
+    arrow, so this has to notice it has arrived rather than pressing once more
+    and diving back in.
+    """
+    for _ in range(12):
+        if log.last_screen() == "MainMenuScreen":
+            return
+        press(page, "ArrowUp", 6)
+        press(page, "Enter")
+        page.wait_for_timeout(500)
+    raise AssertionError("could not get back to the home screen\n  "
+                         + "\n  ".join(log.lines[-30:]))

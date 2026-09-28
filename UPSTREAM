@@ -1,159 +1,31 @@
-# The two firmwares this simulator runs, pinned.
+# The firmware this simulator runs, pinned.
 #
-# src/seedsigner in a built wallet zip is one of the trees below, verbatim.
-# Nothing in this repository patches either of them: the hardware seams are
-# replaced from the outside, by the modules in src/shims and by the stand-in
-# packages in src/smartcard and src/fakes. That is the property the build script
-# exists to let you check for yourself.
+# src/seedsigner in the built firmware zip is the tree below, verbatim. Nothing in
+# this repository patches it: the hardware seams are replaced from the outside,
+# by the modules in src/shims and by the stand-in packages in src/fakes. That is
+# the property the build script exists to let you check for yourself.
 #
-# Named sections, and every consumer of this file names the section it wants:
-# build/build-wallet-zip.sh, which assembles the zip, and the two workflows that
-# re-derive its hash and run upstream's own tests against our pins. Nothing reads
-# a key outside a section, so the parsers cannot silently pick up the wrong pin
-# if a section is renamed or removed.
+# A named section, and every consumer of this file names the section it wants:
+# build/build-firmware-zip.sh, which assembles the zip, and the two workflows that
+# re-derive its hash and run upstream's own tests against the pin.
 #
-# The first two sections are the two firmwares, and only those two are built. The
-# two after them pin the smartcard applets, which nothing here builds at all; the
-# comment above them says what they are for.
-#
-# Every pin here is a release tag rather than a branch tip. A tip moves: rebase
-# or force-push dev and the sha stops existing on the remote, at which point every
+# The pin is a release tag rather than a branch tip. A tip moves: rebase or
+# force-push and the sha stops existing on the remote, at which point every
 # rebuild described here fails at the fetch, for everyone, permanently. A tag is
 # a name upstream has published and does not move. The sha is still the pin; the
 # tag only says which release it is.
 #
-# Each firmware section also publishes the two hashes of the wallet zip that
-# build/build-wallet-zip.sh produces from that pin. Rebuild it yourself and
+# The section also publishes the two hashes of the firmware zip that
+# build/build-firmware-zip.sh produces from that pin. Rebuild it yourself and
 # compare; if these differ, something between that commit and the file you were
 # served is not what it claims to be.
 
 # SeedSigner as the SeedSigner project publishes it: the firmware on a plain
-# device. No smartcard support, no card menus, and a much smaller dependency set
-# because of it.
+# device.
 [stock]
 repo   = https://github.com/SeedSigner/seedsigner.git
 commit = e0a80d4b33b8eb7fb1e9fd14a27b7cd11c7d2cd6
 tag    = 0.8.7
 
-wallet_zip_sha256          = 2db897dea90a0ecc090e959cbea34c6b4afbaa860478a260cc51f8cfdfd0a253
-wallet_zip_contents_sha256 = dbea45131cc89e391b8ced909975b7d0030771d1d284142dd8287668130f2974
-
-# The 3rdIteration fork, which merges the release above and adds smartcard
-# support: SeedKeeper and Satochip cards, the card menus, and the dependency
-# stack those need. This tag is also what the official pi0-smartcard device
-# image is built from, so the simulator and that physical device run the same
-# code.
-[smartcard]
-repo   = https://github.com/3rdIteration/seedsigner.git
-commit = 662d9dba2327eb77d6924ae9bd62d4902bf24634
-tag    = SeSi-0.8.7+ShSi-B11
-
-wallet_zip_sha256          = 8f08a300043bbc6ce79b70b5676ec3cf069cccb6772e271522abbb63de437dca
-wallet_zip_contents_sha256 = 231a83cc8757098816386f5146bd6f20caccd7ff09aa2f286bf14547c5e65b93
-
-# Our own fork of the fork above, adding BIP-352 silent payments: the receive
-# flow behind a setting that is off by default, and BIP-375/376 send and spend
-# parsing. This is the wallet the DoomSigner device image is built from, so the
-# simulator and that device run the same code -- which is the whole reason it has
-# a zip of its own rather than borrowing the smartcard one and being patched at
-# runtime, as it was until 2026-09-03.
-#
-# Unlike the two above, this pin is OURS. Its hashes are what our own CI
-# produces, not what an upstream project publishes, and that difference is the
-# point rather than something to paper over: rebuilding it checks that we built
-# what we said we did, not that upstream did.
-[doomsigner]
-repo   = https://github.com/bitsagarob/doomsigner.git
-commit = 59a7a8b52e2f73e698f96d07e08d2df2de6436e6
-tag    = none: dev, ahead of the last release
-
-# DoomSigner is the fork with MuSig2: BIP-327 signing, the card-backed nonce
-# vault, and the spare nonces a coordinator pools, on top of silent payments and
-# the boot game. Pinned to dev rather than a tag because the fork has not tagged
-# a release with the MuSig2 work yet. Re-pinned below once built.
-wallet_zip_sha256          = d1a28a023dd690ab571ae6ab42c117ae74cd7ff9f135b771f8dda1c353dc14ef
-wallet_zip_contents_sha256 = 73ff07c0d650d1da8efaa53d42e3e5f444b53d94e21a25aa2a41ea5b3a0d1ef1
-
-
-
-# The two smartcard applets, pinned as a reference rather than as an input.
-#
-# Nothing here builds these. They are JavaCard, they run on a secure element,
-# and src/smartcard/ emulates them in Python instead: it answers their APDUs so
-# that pysatochip and the wallet above it run unmodified. No build script reads
-# the two sections below and no artifact contains a byte of them.
-#
-# They are pinned because "we emulate a SeedKeeper" is a claim with a version in
-# it. An applet gains instructions between releases, and a simulator that does
-# not say which release it is imitating cannot be checked against anything. So
-# these record which one: the tag whose protocol version each simulated card
-# reports in its own GET STATUS answer, which is what the wallet reads to decide
-# how to lay a seed out. docs/ARCHITECTURE.md maps every APDU src/smartcard/
-# answers to the source file and the constant in these two trees that defines
-# it, and lists what those trees have that this simulation deliberately does not.
-#
-# Tag naming is the applets' own: v0.12 is Satochip protocol 0.12, and v0.2-0.1
-# is SeedKeeper protocol 0.2, applet build 0.1.
-
-[satochip-applet]
-repo   = https://github.com/Toporin/SatochipApplet.git
-commit = c3baeb6b1b84f5bdd05b47bbf2dd9cf8631c11ef
-tag    = v0.12
-
-[seedkeeper-applet]
-repo   = https://github.com/Toporin/Seedkeeper-Applet.git
-commit = 2e59f0653c5dd39f6793ee5c41ee7344ffdeb48f
-tag    = v0.2-0.1
-
-# Two instructions the simulated SeedKeeper answers are not in the tag above.
-# 0x7E and 0x7F are the MuSig2 nonce vault, which is a branch off it and not a
-# release, so there is no tag to pin and this section stays on the release. A
-# card holding the vault reports the same protocol version, 0.2, because the
-# protocol for every instruction that already existed is unchanged; a client
-# finds out whether it has the vault by asking for a nonce and reading 6D00 if
-# it does not. Everything else in the simulated SeedKeeper is the tag.
-
-# The boot game. Not a firmware and not a wallet: this pins the tree the
-# browser build of the GAME is compiled from. Renamed from [doomsigner] when a
-# doomsigner WALLET pin was added below, because build-wallet-zip.sh looks up
-# [<firmware>] and would otherwise have tried to build a wallet from the OS repo.
-#
-# DoomSigner is SeedSigner OS with a game in front of the wallet. It USED to hand
-# off to the smartcard fork unchanged, and this comment used to say so and say
-# there should never be a third wallet zip. That stopped being true: the wallet is
-# now the fork pinned in [doomsigner] above, which adds BIP-352 silent payments.
-# What this section pins is the tree the browser build of the GAME is compiled
-# from, which is a different thing and still not a firmware.
-#
-# A tag, like every other pin in this file, and for a reason this repository has
-# already met: main over there has been force-pushed, and a pin that follows a
-# branch is a pin that can be rewritten out from under a rebuild. The tag names
-# one commit and stays on it.
-#
-# build/build-doom-wasm.sh compiles this with emscripten over an unmodified
-# doomgeneric. The picture is the device's own: it compiles the port's ss_video.c,
-# so the browser is handed the RGB565 the panel would be sent rather than DOOM's
-# native 320x200 put on a canvas.
-
-[doomsigner-game]
-repo   = https://github.com/bitsagarob/doomsigner-os.git
-commit = 4285bda39b59e3344fd04f0794791580f70e3b0c
-tag    = doomsigner-v0.1
-
-emscripten = 6.0.5
-
-doom_js_sha256   = 6b3e0c7f6dc2a582d4d540069e1c9a864868075d295a30ae289c5388659be7b6
-doom_wasm_sha256 = 4a8024b582c93bc9d481df871e0b570132b2244524a3aeb7ab2c69fc53b4aebf
-doom_run_sha256  = 59c64231bdbe5940a7ab918e816c507618bd9a55712f96fdc93730af6f406936
-
-# doomgeneric itself, which nothing here patches.
-[doomgeneric]
-repo   = https://github.com/ozkl/doomgeneric.git
-commit = dcb7a8dbc7a16ce3dda29382ac9aae9d77d21284
-
-# The game's data, which is not code and is not built. Freedoom rather than a
-# retail WAD because it is freely redistributable, which is what makes it
-# servable from a public site at all.
-[freedoom]
-release    = v0.13.0
-wad_sha256 = 7323bcc168c5a45ff10749b339960e98314740a734c30d4b9f3337001f9e703d
+zip_sha256          = 8063382aee3360104521c40b468b10e9cd892e74c44735d9a7ff4e9bf37dfc77
+zip_contents_sha256 = f5474a78046dd145af995dba7aabce2b4979fc8d02671486d7f3984c0bfa86fd

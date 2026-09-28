@@ -1,17 +1,11 @@
 #!/usr/bin/env bash
 #
-# Build a wallet zip: the Python tree the simulator unpacks into the Pyodide
+# Build a firmware zip: the Python tree the simulator unpacks into the Pyodide
 # filesystem at runtime.
 #
-# There are two firmwares and therefore two zips, and the firmware is the one
-# required argument:
+# One firmware, stock SeedSigner, pinned in the [stock] section of UPSTREAM:
 #
-#   ./build/build-wallet-zip.sh smartcard    ->  wallet-smartcard.zip
-#   ./build/build-wallet-zip.sh stock        ->  wallet-stock.zip
-#
-# No default, deliberately. They are equally first-class, they pin different
-# repositories, and a script that guessed would eventually hand somebody the
-# other one's hash to compare against.
+#   ./build/build-firmware-zip.sh              ->  build/out/seedsigner-stock.zip
 #
 # The point of this script is that you do not have to trust the zip that is
 # being served to you. Run it, and compare its sha256 to the one you downloaded.
@@ -19,8 +13,8 @@
 # plus the pinned pure-Python dependencies plus this repository's own stand-in
 # packages for the hardware it cannot have, and nothing else.
 #
-#   ./build/build-wallet-zip.sh smartcard
-#   sha256sum some-downloaded-wallet-smartcard.zip
+#   ./build/build-firmware-zip.sh
+#   sha256sum some-downloaded-seedsigner-stock.zip
 #
 # For that comparison to mean anything the build has to be reproducible, so:
 #
@@ -53,26 +47,23 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
 OUT_DIR="${REPO_ROOT}/build/out"
 CHECKSUMS_FILE="${REPO_ROOT}/build/checksums.txt"
-CACHE_DIR="${WALLET_BUILD_CACHE:-${XDG_CACHE_HOME:-${HOME}/.cache}/seedsigner-sim-build}"
+CACHE_DIR="${FIRMWARE_BUILD_CACHE:-${XDG_CACHE_HOME:-${HOME}/.cache}/seedsigner-sim-build}"
 KEEP_STAGING="no"
 
 usage() {
     cat <<'USAGE'
-Usage: build-wallet-zip.sh FIRMWARE [options]
+Usage: build-firmware-zip.sh [stock] [options]
 
-  FIRMWARE         Which wallet to build, and which section of UPSTREAM to read
-                   its pin from. One of:
-                     smartcard   the 3rdIteration fork, with SeedKeeper and
-                                 Satochip support   ->  wallet-smartcard.zip
-                     stock       SeedSigner as its own project publishes it
-                                                    ->  wallet-stock.zip
+  stock            The only firmware, and the default: SeedSigner as its own
+                   project publishes it, pinned in the [stock] section of
+                   UPSTREAM                         ->  seedsigner-stock.zip
 
   --out DIR        Write the zip here (default: <repo>/build/out)
   --cache DIR      Cache downloaded PyPI artifacts here
                    (default: $XDG_CACHE_HOME/seedsigner-sim-build)
   --no-cache       Download everything fresh, cache nothing
   --keep-staging   Leave the assembled tree in the output directory, for
-                   diffing against an unpacked wallet zip
+                   diffing against an unpacked firmware zip
   -h, --help       This message
 
 Environment:
@@ -85,12 +76,12 @@ Environment:
                       Either or both, for testing your own SeedSigner fork in
                       the simulator. The zip you get will not hash to what
                       UPSTREAM publishes, because it is not that build, and it
-                      says so in wallet-FIRMWARE.build-info.json and in the
-                      page's technical details panel. See CONTRIBUTING.md.
+                      says so in seedsigner-stock.build-info.json and in the
+                      page's i panel. See README.md.
 USAGE
 }
 
-FIRMWARE=""
+FIRMWARE="stock"
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -100,20 +91,13 @@ while [ "$#" -gt 0 ]; do
         --keep-staging) KEEP_STAGING="yes"; shift ;;
         -h|--help)      usage; exit 0 ;;
         -*)             echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
-        *)
-            [ -z "${FIRMWARE}" ] || { echo "only one firmware at a time: already have ${FIRMWARE}, then got $1" >&2; exit 2; }
-            FIRMWARE="$1"; shift ;;
+        stock)          shift ;;
+        *)              echo "no such firmware: $1 (the only one is stock)" >&2; exit 2 ;;
     esac
 done
 
-case "${FIRMWARE}" in
-    smartcard|stock|doomsigner) ;;
-    "")  echo "which firmware? one of: smartcard stock doomsigner" >&2; usage >&2; exit 2 ;;
-    *)   echo "no such firmware: ${FIRMWARE} (one of: smartcard stock doomsigner)" >&2; exit 2 ;;
-esac
-
 die() {
-    echo "build-wallet-zip: $*" >&2
+    echo "build-firmware-zip: $*" >&2
     exit 1
 }
 
@@ -164,296 +148,27 @@ fi
 #   integrity sha256 of the artifact, or the full commit sha
 #   subpath   directory inside the unpacked source that contains `module`
 #
-# One table per firmware, because the two firmwares pin different sets: the
-# smartcard fork needs the whole card stack, stock needs three libraries. They
-# are written out separately rather than expressed as a base plus a delta. Two
-# lists a reader can check line by line against two requirements.txt files beat
-# a mechanism that computes the same lists and has to be understood first.
-#
-# EXPECTED_TOP_LEVEL beside each is everything that must be at the top level of
+# EXPECTED_TOP_LEVEL beside it is everything that must be at the top level of
 # the finished zip, and nothing else. Checked before the zip is written, so a
 # dependency that silently failed to unpack stops the build instead of shipping
-# a wallet that cannot import.
+# firmware that cannot import.
 
-case "${FIRMWARE}" in
-smartcard)
-
-# Deliberately NOT in this table, and why:
-#
-#   Pillow, pycryptodomex, cryptography, cffi, pycparser
-#       Compiled extensions. Pyodide builds and ships its own; the worker asks
-#       for them with loadPackage() at boot (see src/web/wallet-worker.js).
-#       Putting pure-Python stand-ins in the zip would shadow the real ones.
-#       pycryptodomex is not separately available -- the worker aliases the
-#       Cryptodome namespace onto Pyodide's pycryptodome.
-#   pyscard
-#       A C extension binding PC/SC. This is one of the four hardware seams:
-#       src/smartcard/ in this repo deliberately shadows it with a fake card.
-#   pyzbar
-#       Binds libzbar. This fork's decode_qr.py imports it inside a try/except
-#       and sets it to None, so nothing has to stand in for it here; QR decoding
-#       happens in JavaScript (jsQR) instead. Stock imports it unguarded, which
-#       is why the stock table below does have to ship a stand-in.
-#   smbus2, periphery
-#       I2C and GPIO. There is no /dev/i2c in a browser. battery_hat.py guards
-#       both imports, so leaving them out is what makes the simulator correctly
-#       report "no battery HAT" rather than fail later trying to talk to one.
-#   colorama
-#       Upstream marks it Windows-only.
-#
-# certifi IS included even though nothing in a browser opens a TLS socket,
-# because pysatochip imports it at module scope and would fail to import
-# without it.
-#
-# Two entries are not in upstream's requirements.txt at all but are imported by
-# the wallet, so they are pinned here and flagged in THIRD-PARTY.md:
-#
-#   base58     not imported directly; bip38.py uses embit's own base58
-#              submodule. Shipped because upstream's environment provides it
-#   mnemonic   imported by seedsigner/views/seed_views.py and smartcard_views.py
-#
-# ecdsa needs six, which upstream pins but the earlier hand-assembled tree was
-# missing; it is pinned here at upstream's version.
-#
-# pysatochip is the one row whose pin is deliberately NOT the one in upstream's
-# requirements.txt, because the device does not use that file. requirements.txt
-# asks PyPI for pysatochip==0.17.0; the SeedSigner OS image builds
-# 3rdIteration/pysatochip from GitHub at the tag 0.6a through buildroot, and
-# then deletes requirements.txt from the rootfs. Both are in seedsigner-os at
-# the tag whose name matches this firmware's, SeSi-0.8.7+ShSi-B11:
-#
-#   opt/external-packages/python-pysatochip/python-pysatochip.mk
-#       PYTHON_PYSATOCHIP_VERSION = 0.6a
-#       PYTHON_PYSATOCHIP_SITE = $(call github,3rdIteration,pysatochip,...)
-#   opt/pi0-smartcard/configs/pi0-smartcard_defconfig
-#       BR2_PACKAGE_PYTHON_PYSATOCHIP=y
-#   opt/build.sh
-#       rm -rf ${rootfs_overlay}/opt/requirements.txt
-#
-# The two are not the same code. That GitHub tag calls itself pysatochip 0.17.4
-# in its own version.py, four revisions past the newest release on PyPI, and one
-# of those revisions is "correct handling of Password, Descriptor and Data
-# secret types in seedkeeper export": its SEEDKEEPER_DIC_TYPE has
-# 0xC1: 'Descriptor' and PyPI 0.17.0 has no entry for that type at all. Shipping
-# the PyPI one gave this simulator a descriptor failure that does not exist on
-# the device, which is precisely the kind of lie a simulator must not tell. So
-# the row below is the tag, pinned by commit like every other git row here.
-# Stock has no card code and no pysatochip, so none of this touches its build.
-
-read -r -d '' DEPENDENCIES <<'DEPS' || true
-pypi|base58|base58|2.1.1|https://files.pythonhosted.org/packages/4a/45/ec96b29162a402fc4c1c5512d114d7b3787b9d1c2ec241d9568b4816ee23/base58-2.1.1-py3-none-any.whl|11a36f4d3ce51dfc1043f3218591ac4eb1ceb172919cebe05b52a5bcc8d245c2|.
-pypi|certifi|certifi|2025.7.14|https://files.pythonhosted.org/packages/4f/52/34c6cf5bb9285074dc3531c437b3919e825d976fde097a7a73f79e726d03/certifi-2025.7.14-py3-none-any.whl|6b31f564a415d79ee77df69d757bb49a5bb53bd9f756cbbe24394ffd6fc1f4b2|.
-pypi|ecdsa|ecdsa|0.19.1|https://files.pythonhosted.org/packages/cb/a3/460c57f094a4a165c84a1341c373b0a4f5ec6ac244b998d5021aade89b77/ecdsa-0.19.1-py2.py3-none-any.whl|30638e27cf77b7e15c4c4cc1973720149e1033827cfd00661ca5c8cc0cdb24c3|.
-pypi|embit|embit|0.8.0|https://files.pythonhosted.org/packages/83/88/b054b00ade6d2a41749e15976cdcec4b7ec4656ac1cb917ce3de395528d1/embit-0.8.0.tar.gz|8bf4b10073c67400370ce523fb16f035fe759f6fdd987c579bdcc268d75ed770|embit-0.8.0/src
-pypi|mnemonic|mnemonic|0.21|https://files.pythonhosted.org/packages/57/48/5abb16ce7f9d97b728e6b97c704ceaa614362e0847651f379ed0511942a0/mnemonic-0.21-py3-none-any.whl|72dc9de16ec5ef47287237b9b6943da11647a03fe7cf1f139fc3d7c4a7439288|.
-pypi|ndef|ndeflib|0.3.3|https://files.pythonhosted.org/packages/c9/80/bbc9a4818cd74807f914d225611cd724d8c0e56237b952a9a4aa6d583f5c/ndeflib-0.3.3-py2.py3-none-any.whl|c634b1af2ab454754f0fdbe1debd38247ed7bdaf94587359b857726f3ee7decb|.
-pypi|OpenSSL|pyOpenSSL|25.1.0|https://files.pythonhosted.org/packages/80/28/2659c02301b9500751f8d42f9a6632e1508aa5120de5e43042b8b30f8d5d/pyopenssl-25.1.0-py3-none-any.whl|2b11f239acc47ac2e5aca04fd7fa829800aeee22a2eb30d744572a157bd8a1ab|.
-pypi|pyaes|pyaes|1.6.1|https://files.pythonhosted.org/packages/44/66/2c17bae31c906613795711fc78045c285048168919ace2220daa372c7d72/pyaes-1.6.1.tar.gz|02c1b1405c38d3c370b085fb952dd8bea3fadcee6411ad99f312cc129c536d8f|pyaes-1.6.1
-pypi|pyasn1|pyasn1|0.6.2|https://files.pythonhosted.org/packages/44/b5/a96872e5184f354da9c84ae119971a0a4c221fe9b27a4d94bd43f2596727/pyasn1-0.6.2-py3-none-any.whl|1eb26d860996a18e9b6ed05e7aae0e9fc21619fcee6af91cca9bad4fbea224bf|.
-pypi|qrcode|qrcode|7.3.1|https://files.pythonhosted.org/packages/94/9f/31f33cdf3cf8f98e64c42582fb82f39ca718264df61957f28b0bbb09b134/qrcode-7.3.1.tar.gz|375a6ff240ca9bd41adc070428b5dfc1dcfbb0f2507f1ac848f6cded38956578|qrcode-7.3.1
-pypi|shamir_mnemonic|shamir-mnemonic|0.3.0|https://files.pythonhosted.org/packages/1d/38/2124e565afe40993949dbc89da6c654a2c9a1b24dd80039812ef7cdbaef3/shamir_mnemonic-0.3.0-py3-none-any.whl|188c6b5bd00d5e756e12e2b186c3cb7c98ff7ff44df608d4c1d2077f6b6e730f|.
-pypi|six.py|six|1.17.0|https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl|4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274|.
-pypi|typing_extensions.py|typing_extensions|4.14.1|https://files.pythonhosted.org/packages/b5/00/d631e67a838026495268c2f6884f3711a15a9a2a96cd244fdaea53b823fb/typing_extensions-4.14.1-py3-none-any.whl|d1e1e3b58374dc93031d6eda2420a48ea44a36c2b4766a4fdeb3710755731d76|.
-git|pgpy|PGPy-3rdIteration-fork|7cdad000a76ced53c873211241d5ba20019a8488|https://github.com/3rdIteration/PGPy.git|7cdad000a76ced53c873211241d5ba20019a8488|.
-git|pygp|PyGP-3rdIteration-fork|15682ec8fd042b5d0ae3422e9434e9734db6e55b|https://github.com/3rdIteration/pygp.git|15682ec8fd042b5d0ae3422e9434e9734db6e55b|.
-git|pysatochip|pysatochip-3rdIteration|d77e311e0cd39193c9b2c03a1ab5f69421b8f4d5|https://github.com/3rdIteration/pysatochip.git|d77e311e0cd39193c9b2c03a1ab5f69421b8f4d5|.
-git|specter_card|specter-card|06dcde629cdc1057934b434afc46d822c2d2425d|https://github.com/3rdIteration/specter-javacard.git|06dcde629cdc1057934b434afc46d822c2d2425d|py
-git|urtypes|urtypes|7fb280eab3b3563dfc57d2733b0bf5cbc0a96a6a|https://github.com/selfcustody/urtypes.git|7fb280eab3b3563dfc57d2733b0bf5cbc0a96a6a|src
-DEPS
-
-EXPECTED_TOP_LEVEL=(
-    LICENSE.md
-    OpenSSL
-    base58
-    certifi
-    ecdsa
-    embit
-    licenses
-    main.py
-    mnemonic
-    ndef
-    pgpy
-    pyaes
-    pyasn1
-    pygp
-    pysatochip
-    qrcode
-    seedsigner
-    shamir_mnemonic
-    six.py
-    smartcard
-    specter_card
-    typing_extensions.py
-    urtypes
-)
-
-# The simulated smartcards, shadowing pyscard's `smartcard` module. Nothing in
-# stock imports it, so only this firmware stages it. Rows are
-# source:name-in-the-zip:what the licences manifest should call it.
-STAGE_PACKAGES=(
-    "${REPO_ROOT}/src/smartcard:smartcard:fake card, not pyscard"
-)
-
-;;
-doomsigner)
-
-# Our own fork of the fork above. Every row is the smartcard table's, with one
-# exception, and the table is written out in full rather than expressed as a
-# delta for the same reason stock's is: a reader can check it line by line, and
-# the workflow that re-runs upstream's tests reads exactly one table per
-# firmware out of this file. A mechanism that computed this list would have to
-# be understood before either could be trusted.
-#
-# The one row that differs is embit: notTanveer's BIP-352 branch (embit#145) by
-# commit, not the 0.8.0 release. That same commit is pinned by the app fork's
-# requirements.txt and by the device image's Buildroot package, and all three
-# have to agree or the simulator runs code the device does not.
-
-# Deliberately NOT in this table, and why:
-#
-#   Pillow, pycryptodomex, cryptography, cffi, pycparser
-#       Compiled extensions. Pyodide builds and ships its own; the worker asks
-#       for them with loadPackage() at boot (see src/web/wallet-worker.js).
-#       Putting pure-Python stand-ins in the zip would shadow the real ones.
-#       pycryptodomex is not separately available -- the worker aliases the
-#       Cryptodome namespace onto Pyodide's pycryptodome.
-#   pyscard
-#       A C extension binding PC/SC. This is one of the four hardware seams:
-#       src/smartcard/ in this repo deliberately shadows it with a fake card.
-#   pyzbar
-#       Binds libzbar. This fork's decode_qr.py imports it inside a try/except
-#       and sets it to None, so nothing has to stand in for it here; QR decoding
-#       happens in JavaScript (jsQR) instead. Stock imports it unguarded, which
-#       is why the stock table below does have to ship a stand-in.
-#   smbus2, periphery
-#       I2C and GPIO. There is no /dev/i2c in a browser. battery_hat.py guards
-#       both imports, so leaving them out is what makes the simulator correctly
-#       report "no battery HAT" rather than fail later trying to talk to one.
-#   colorama
-#       Upstream marks it Windows-only.
-#
-# certifi IS included even though nothing in a browser opens a TLS socket,
-# because pysatochip imports it at module scope and would fail to import
-# without it.
-#
-# Two entries are not in upstream's requirements.txt at all but are imported by
-# the wallet, so they are pinned here and flagged in THIRD-PARTY.md:
-#
-#   base58     not imported directly; bip38.py uses embit's own base58
-#              submodule. Shipped because upstream's environment provides it
-#   mnemonic   imported by seedsigner/views/seed_views.py and smartcard_views.py
-#
-# ecdsa needs six, which upstream pins but the earlier hand-assembled tree was
-# missing; it is pinned here at upstream's version.
-#
-# pysatochip is the one row whose pin is deliberately NOT the one in upstream's
-# requirements.txt, because the device does not use that file. requirements.txt
-# asks PyPI for pysatochip==0.17.0; the SeedSigner OS image builds
-# 3rdIteration/pysatochip from GitHub at the tag 0.6a through buildroot, and
-# then deletes requirements.txt from the rootfs. Both are in seedsigner-os at
-# the tag whose name matches this firmware's, SeSi-0.8.7+ShSi-B11:
-#
-#   opt/external-packages/python-pysatochip/python-pysatochip.mk
-#       PYTHON_PYSATOCHIP_VERSION = 0.6a
-#       PYTHON_PYSATOCHIP_SITE = $(call github,3rdIteration,pysatochip,...)
-#   opt/pi0-smartcard/configs/pi0-smartcard_defconfig
-#       BR2_PACKAGE_PYTHON_PYSATOCHIP=y
-#   opt/build.sh
-#       rm -rf ${rootfs_overlay}/opt/requirements.txt
-#
-# The two are not the same code. That GitHub tag calls itself pysatochip 0.17.4
-# in its own version.py, four revisions past the newest release on PyPI, and one
-# of those revisions is "correct handling of Password, Descriptor and Data
-# secret types in seedkeeper export": its SEEDKEEPER_DIC_TYPE has
-# 0xC1: 'Descriptor' and PyPI 0.17.0 has no entry for that type at all. Shipping
-# the PyPI one gave this simulator a descriptor failure that does not exist on
-# the device, which is precisely the kind of lie a simulator must not tell. So
-# the row below is the tag, pinned by commit like every other git row here.
-# Stock has no card code and no pysatochip, so none of this touches its build.
-
-read -r -d '' DEPENDENCIES <<'DEPS' || true
-pypi|base58|base58|2.1.1|https://files.pythonhosted.org/packages/4a/45/ec96b29162a402fc4c1c5512d114d7b3787b9d1c2ec241d9568b4816ee23/base58-2.1.1-py3-none-any.whl|11a36f4d3ce51dfc1043f3218591ac4eb1ceb172919cebe05b52a5bcc8d245c2|.
-pypi|certifi|certifi|2025.7.14|https://files.pythonhosted.org/packages/4f/52/34c6cf5bb9285074dc3531c437b3919e825d976fde097a7a73f79e726d03/certifi-2025.7.14-py3-none-any.whl|6b31f564a415d79ee77df69d757bb49a5bb53bd9f756cbbe24394ffd6fc1f4b2|.
-pypi|ecdsa|ecdsa|0.19.1|https://files.pythonhosted.org/packages/cb/a3/460c57f094a4a165c84a1341c373b0a4f5ec6ac244b998d5021aade89b77/ecdsa-0.19.1-py2.py3-none-any.whl|30638e27cf77b7e15c4c4cc1973720149e1033827cfd00661ca5c8cc0cdb24c3|.
-git|embit|embit-musig2|a4ee5a41044a0ed3e2b1e92c89880a1ac2e9cb18|https://github.com/bitsagarob/embit.git|a4ee5a41044a0ed3e2b1e92c89880a1ac2e9cb18|src
-pypi|mnemonic|mnemonic|0.21|https://files.pythonhosted.org/packages/57/48/5abb16ce7f9d97b728e6b97c704ceaa614362e0847651f379ed0511942a0/mnemonic-0.21-py3-none-any.whl|72dc9de16ec5ef47287237b9b6943da11647a03fe7cf1f139fc3d7c4a7439288|.
-pypi|ndef|ndeflib|0.3.3|https://files.pythonhosted.org/packages/c9/80/bbc9a4818cd74807f914d225611cd724d8c0e56237b952a9a4aa6d583f5c/ndeflib-0.3.3-py2.py3-none-any.whl|c634b1af2ab454754f0fdbe1debd38247ed7bdaf94587359b857726f3ee7decb|.
-pypi|OpenSSL|pyOpenSSL|25.1.0|https://files.pythonhosted.org/packages/80/28/2659c02301b9500751f8d42f9a6632e1508aa5120de5e43042b8b30f8d5d/pyopenssl-25.1.0-py3-none-any.whl|2b11f239acc47ac2e5aca04fd7fa829800aeee22a2eb30d744572a157bd8a1ab|.
-pypi|pyaes|pyaes|1.6.1|https://files.pythonhosted.org/packages/44/66/2c17bae31c906613795711fc78045c285048168919ace2220daa372c7d72/pyaes-1.6.1.tar.gz|02c1b1405c38d3c370b085fb952dd8bea3fadcee6411ad99f312cc129c536d8f|pyaes-1.6.1
-pypi|pyasn1|pyasn1|0.6.2|https://files.pythonhosted.org/packages/44/b5/a96872e5184f354da9c84ae119971a0a4c221fe9b27a4d94bd43f2596727/pyasn1-0.6.2-py3-none-any.whl|1eb26d860996a18e9b6ed05e7aae0e9fc21619fcee6af91cca9bad4fbea224bf|.
-git|pydnssec_prover|pydnssec-prover|4a3365e4b10fc6635f26397120a2cce1b8fd8b2c|https://github.com/bitsagarob/pydnssec-prover.git|4a3365e4b10fc6635f26397120a2cce1b8fd8b2c|src
-pypi|qrcode|qrcode|7.3.1|https://files.pythonhosted.org/packages/94/9f/31f33cdf3cf8f98e64c42582fb82f39ca718264df61957f28b0bbb09b134/qrcode-7.3.1.tar.gz|375a6ff240ca9bd41adc070428b5dfc1dcfbb0f2507f1ac848f6cded38956578|qrcode-7.3.1
-pypi|shamir_mnemonic|shamir-mnemonic|0.3.0|https://files.pythonhosted.org/packages/1d/38/2124e565afe40993949dbc89da6c654a2c9a1b24dd80039812ef7cdbaef3/shamir_mnemonic-0.3.0-py3-none-any.whl|188c6b5bd00d5e756e12e2b186c3cb7c98ff7ff44df608d4c1d2077f6b6e730f|.
-pypi|six.py|six|1.17.0|https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl|4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274|.
-pypi|typing_extensions.py|typing_extensions|4.14.1|https://files.pythonhosted.org/packages/b5/00/d631e67a838026495268c2f6884f3711a15a9a2a96cd244fdaea53b823fb/typing_extensions-4.14.1-py3-none-any.whl|d1e1e3b58374dc93031d6eda2420a48ea44a36c2b4766a4fdeb3710755731d76|.
-git|pgpy|PGPy-3rdIteration-fork|7cdad000a76ced53c873211241d5ba20019a8488|https://github.com/3rdIteration/PGPy.git|7cdad000a76ced53c873211241d5ba20019a8488|.
-git|pygp|PyGP-3rdIteration-fork|15682ec8fd042b5d0ae3422e9434e9734db6e55b|https://github.com/3rdIteration/pygp.git|15682ec8fd042b5d0ae3422e9434e9734db6e55b|.
-git|pysatochip|pysatochip-3rdIteration|d77e311e0cd39193c9b2c03a1ab5f69421b8f4d5|https://github.com/3rdIteration/pysatochip.git|d77e311e0cd39193c9b2c03a1ab5f69421b8f4d5|.
-git|specter_card|specter-card|06dcde629cdc1057934b434afc46d822c2d2425d|https://github.com/3rdIteration/specter-javacard.git|06dcde629cdc1057934b434afc46d822c2d2425d|py
-git|urtypes|urtypes|7fb280eab3b3563dfc57d2733b0bf5cbc0a96a6a|https://github.com/selfcustody/urtypes.git|7fb280eab3b3563dfc57d2733b0bf5cbc0a96a6a|src
-DEPS
-
-EXPECTED_TOP_LEVEL=(
-    LICENSE.md
-    OpenSSL
-    base58
-    certifi
-    ecdsa
-    embit
-    licenses
-    main.py
-    mnemonic
-    ndef
-    pgpy
-    pyaes
-    pyasn1
-    pydnssec_prover
-    pygp
-    pysatochip
-    qrcode
-    seedsigner
-    shamir_mnemonic
-    six.py
-    smartcard
-    specter_card
-    typing_extensions.py
-    urtypes
-)
-
-# The simulated smartcards, shadowing pyscard's `smartcard` module. Nothing in
-# stock imports it, so only this firmware stages it. Rows are
-# source:name-in-the-zip:what the licences manifest should call it.
-STAGE_PACKAGES=(
-    "${REPO_ROOT}/src/smartcard:smartcard:fake card, not pyscard"
-)
-
-;;
-stock)
 
 # Stock's whole requirements.txt is five lines, and two of them do not belong in
 # a zip:
 #
 #   Pillow
 #       A compiled extension. Pyodide ships its own and the worker asks for it
-#       with loadPackage() at boot (see src/web/wallet-worker.js); a pure-Python
+#       with loadPackage() at boot (see src/web/worker.js); a pure-Python
 #       stand-in here would shadow the real one.
 #   pyzbar
 #       Binds libzbar, which has no WebAssembly build. Stock's decode_qr.py
 #       imports it at module scope with no try/except, so the import has to
 #       succeed: src/fakes/pyzbar is staged below and browser_camera.py replaces
-#       the one function that would have called it. The smartcard fork guards
-#       the same import and therefore needs no such file.
+#       the one function that would have called it.
 #
-# The other three are pinned here. embit and qrcode are the same artifacts, at
-# the same versions and the same sha256, that the smartcard table pins, because
-# both firmwares pin the same two versions.
-#
-# urtypes is the one place the two firmwares genuinely disagree. The fork pins a
-# selfcustody git commit; stock pins PyPI 1.0.1. Their trees differ by a single
-# line, `from .crypto import *` in __init__.py, which PyPI 1.0.1 has and the
-# pinned commit does not. Reusing the fork's pin would have built and probably
-# run, and it would also have meant this zip was not the thing stock's
-# requirements.txt names. Each firmware gets the pin its own upstream published.
+# The other three are pinned here, at the versions stock's requirements.txt
+# names: embit 0.8.0, qrcode 7.3.1 and urtypes 1.0.1 from PyPI.
 
 read -r -d '' DEPENDENCIES <<'DEPS' || true
 pypi|embit|embit|0.8.0|https://files.pythonhosted.org/packages/83/88/b054b00ade6d2a41749e15976cdcec4b7ec4656ac1cb917ce3de395528d1/embit-0.8.0.tar.gz|8bf4b10073c67400370ce523fb16f035fe759f6fdd987c579bdcc268d75ed770|embit-0.8.0/src
@@ -473,16 +188,13 @@ EXPECTED_TOP_LEVEL=(
     urtypes
 )
 
-# Two import-time stand-ins, and no `smartcard`: stock has no card code to
-# import it. See src/fakes/README.md for what they are and are not. Rows are
+# Two import-time stand-ins. See src/fakes/README.md for what they are and are not. Rows are
 # source:name-in-the-zip:what the licences manifest should call it.
 STAGE_PACKAGES=(
     "${REPO_ROOT}/src/fakes/RPi:RPi:import stand-in, not RPi.GPIO"
     "${REPO_ROOT}/src/fakes/pyzbar:pyzbar:import stand-in, not pyzbar"
 )
 
-;;
-esac
 
 # ---------------------------------------------------------------------------
 # Scratch space
@@ -609,7 +321,7 @@ git_checkout() {
 
 # What to tell somebody who hits either half of the check below. This build
 # never rewrites build/checksums.txt: a build that refreshed the manifest would
-# package a modified simulated card and call it correct, which is the one thing
+# package a modified stand-in and call it correct, which is the one thing
 # the manifest is here to stop. Regenerating is a separate command, run on
 # purpose, leaving a diff.
 REGENERATE_HINT="If the change is deliberate, regenerate the manifest with
@@ -624,7 +336,7 @@ and commit it together with the files that changed."
 # it says. This is the only input to the zip that is not already content
 # addressed: upstream and the git dependencies are pinned by commit, the PyPI
 # ones by artifact sha256, and these packages were copied out of the working tree
-# as they happened to be. So a modified simulated card produced a different zip
+# as they happened to be. So a modified stand-in produced a different zip
 # and nothing in the repository said which byte had moved.
 #
 # Both directions, because both are the same mistake here: a file that changed
@@ -671,7 +383,7 @@ find_license() {
 }
 
 # ---------------------------------------------------------------------------
-# 1. The wallet: upstream SeedSigner at the pinned commit
+# 1. The firmware: upstream SeedSigner at the pinned commit
 # ---------------------------------------------------------------------------
 #
 # The pin lives in UPSTREAM rather than in this script, so there is exactly one
@@ -682,9 +394,8 @@ UPSTREAM_FILE="${REPO_ROOT}/UPSTREAM"
 
 # upstream_field KEY
 #
-# One key out of the [FIRMWARE] section of UPSTREAM. Section-aware, because that
-# file now describes two firmwares and a parser that ignored the headers would
-# cheerfully hand back the other one's commit. The same awk program appears in
+# One key out of the [stock] section of UPSTREAM. Section-aware, so a key is
+# only ever read from the section it belongs to. The same awk program appears in
 # .github/workflows/reproducible-build.yml and upstream-tests.yml, which read
 # the same file for the same reason.
 upstream_field() {
@@ -773,7 +484,7 @@ step "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}"
 # keeps it out of the staged tree by construction rather than by filtering.
 rm -rf -- "${UPSTREAM_SRC}/.git"
 
-# Verbatim. Nothing in this repository patches the wallet -- the hardware seams
+# Verbatim. Nothing in this repository patches the firmware -- the hardware seams
 # are replaced from outside, by src/shims (which the worker writes into the
 # filesystem after unpacking) and by the stand-in packages staged below.
 cp -R -- "${UPSTREAM_SRC}/src/seedsigner" "${STAGING}/seedsigner"
@@ -787,20 +498,13 @@ cp    -- "${UPSTREAM_SRC}/LICENSE.md"     "${STAGING}/licenses/SeedSigner.LICENS
 # 3. This repository's stand-in packages
 # ---------------------------------------------------------------------------
 #
-# Each one shadows a module the wallet imports and this environment cannot
+# Each one shadows a module the firmware imports and this environment cannot
 # provide. They are top-level entries in the zip for exactly that reason:
-# /wallet is first on sys.path, so the import in unmodified SeedSigner code
-# finds ours. Which ones are staged is the firmware's business, and the list was
-# chosen above:
+# /firmware is first on sys.path, so the import in unmodified SeedSigner code
+# finds ours. The list was chosen above:
 #
-#   smartcard  the simulated SeedKeeper and Satochip, shadowing pyscard. Only
-#              the fork has card code to import it.
-#   RPi        an import stand-in for RPi.GPIO. Only stock imports it unguarded.
+#   RPi        an import stand-in for RPi.GPIO, which stock imports unguarded.
 #   pyzbar     an import stand-in for the zbar binding, for the same reason.
-#
-# Nothing the other firmware never imports is shipped to it. A zip whose claim
-# is "the pin, its pinned dependencies and this repository's stand-ins, and
-# nothing else" should not carry a package that is dead on arrival.
 #
 # Each one is checked against build/checksums.txt before it is copied, so that
 # last clause names a specific set of bytes rather than whatever the working tree
@@ -826,9 +530,9 @@ done
 
 MANIFEST="${WORK_DIR}/licenses-manifest.txt"
 {
-    echo "Third-party code redistributed inside this wallet.zip."
+    echo "Third-party code redistributed inside this firmware zip."
     echo "Licence texts are the files alongside this one."
-    echo "Written by build/build-wallet-zip.sh; see THIRD-PARTY.md for the full picture."
+    echo "Written by build/build-firmware-zip.sh; see THIRD-PARTY.md for the full picture."
     echo
     printf '%-22s %-26s %s\n' "MODULE" "DISTRIBUTION" "RELEASE"
     printf '%-22s %-26s %s\n' "seedsigner, main.py" "SeedSigner" "commit ${UPSTREAM_COMMIT}"
@@ -893,7 +597,7 @@ ${leftovers}"
 # 6. Check the tree before writing anything
 # ---------------------------------------------------------------------------
 #
-# Fail loudly here rather than ship a zip that unpacks into a wallet which
+# Fail loudly here rather than ship a zip that unpacks into firmware which
 # cannot import. Both directions are checked: a missing entry means a dependency
 # did not unpack, an unexpected one means something got in that nobody declared.
 
@@ -925,8 +629,8 @@ done
 # Named after the firmware, so both can sit in one directory and be served side
 # by side, and so a downloaded file says which pin it is meant to match.
 mkdir -p "${OUT_DIR}"
-OUT_ZIP="${OUT_DIR}/wallet-${FIRMWARE}.zip"
-OUT_MANIFEST="${OUT_DIR}/wallet-${FIRMWARE}.zip.manifest"
+OUT_ZIP="${OUT_DIR}/seedsigner-${FIRMWARE}.zip"
+OUT_MANIFEST="${OUT_DIR}/seedsigner-${FIRMWARE}.zip.manifest"
 
 step "writing ${OUT_ZIP}"
 python3 - "${STAGING}" "${OUT_ZIP}" "${OUT_MANIFEST}" "${SOURCE_DATE_EPOCH}" <<'PY'
@@ -1022,7 +726,7 @@ fi
 # Which is also what makes an SS_REPO/SS_COMMIT override announce itself with no
 # special case: the published hashes stay published hashes, the zip beside them
 # is a different zip, and the page's own check compares the two and puts up "the
-# wallet zip this page loaded is not the published build" in as many words. The
+# firmware zip this page loaded is not the published build" in as many words. The
 # three fields below add what that verdict cannot say on its own -- that the
 # difference is an override rather than tampering, and what it was built from.
 #
@@ -1031,12 +735,12 @@ fi
 # not have to be touched for a firmware nobody rebuilt.
 
 UPSTREAM_TAG="$(upstream_field tag)"
-PUBLISHED_ZIP_SHA256="$(upstream_field wallet_zip_sha256)"
-PUBLISHED_CONTENTS_SHA256="$(upstream_field wallet_zip_contents_sha256)"
+PUBLISHED_ZIP_SHA256="$(upstream_field zip_sha256)"
+PUBLISHED_CONTENTS_SHA256="$(upstream_field zip_contents_sha256)"
 
 [ -n "${UPSTREAM_TAG}" ]               || die "no 'tag =' line in the [${FIRMWARE}] section of ${UPSTREAM_FILE}"
-[ -n "${PUBLISHED_ZIP_SHA256}" ]       || die "no 'wallet_zip_sha256 =' line in the [${FIRMWARE}] section of ${UPSTREAM_FILE}"
-[ -n "${PUBLISHED_CONTENTS_SHA256}" ]  || die "no 'wallet_zip_contents_sha256 =' line in the [${FIRMWARE}] section of ${UPSTREAM_FILE}"
+[ -n "${PUBLISHED_ZIP_SHA256}" ]       || die "no 'zip_sha256 =' line in the [${FIRMWARE}] section of ${UPSTREAM_FILE}"
+[ -n "${PUBLISHED_CONTENTS_SHA256}" ]  || die "no 'zip_contents_sha256 =' line in the [${FIRMWARE}] section of ${UPSTREAM_FILE}"
 
 # What the panel shows in its first two rows, which is where a reader starts.
 # There is no tag on an override -- the pin's tag describes the pin's commit and
@@ -1055,14 +759,14 @@ ASSETS_SCRIPT="${REPO_ROOT}/build/fetch-assets.sh"
 PYODIDE_VERSION="$(sed -n 's/^PYODIDE_VERSION="\([^"]*\)".*$/\1/p' "${ASSETS_SCRIPT}" | sed -n 1p)"
 [ -n "${PYODIDE_VERSION}" ] || die "no PYODIDE_VERSION= line in ${ASSETS_SCRIPT}"
 
-OUT_INFO="${OUT_DIR}/wallet-${FIRMWARE}.build-info.json"
+OUT_INFO="${OUT_DIR}/seedsigner-${FIRMWARE}.build-info.json"
 
 step "writing ${OUT_INFO}"
 INFO_FIRMWARE="${INFO_FIRMWARE_TEXT}" \
 INFO_REPO="${UPSTREAM_REPO}" \
 INFO_COMMIT="${UPSTREAM_COMMIT}" \
 INFO_TAG="${UPSTREAM_TAG}" \
-INFO_ZIP="wallet-${FIRMWARE}.zip" \
+INFO_ZIP="seedsigner-${FIRMWARE}.zip" \
 INFO_ZIP_SHA256="${PUBLISHED_ZIP_SHA256}" \
 INFO_CONTENTS_SHA256="${PUBLISHED_CONTENTS_SHA256}" \
 INFO_PYODIDE="${PYODIDE_VERSION}" \
@@ -1093,7 +797,7 @@ info = {
         "commit": os.environ["INFO_COMMIT"],
         "tag": os.environ["INFO_TAG"],
     },
-    "wallet_zip": {
+    "zip": {
         "name": os.environ["INFO_ZIP"],
         "published_sha256": os.environ["INFO_ZIP_SHA256"],
         "published_contents_sha256": os.environ["INFO_CONTENTS_SHA256"],
@@ -1148,7 +852,7 @@ if [ "${OVERRIDDEN}" = "yes" ]; then
     echo "published build. That is the right answer for a build from your own tree,"
     echo "not a fault. Unset SS_REPO and SS_COMMIT and rebuild to get the pinned one."
 else
-    echo "Compare the zip sha256 above with the wallet-${FIRMWARE}.zip you were served,"
+    echo "Compare the zip sha256 above with the seedsigner-${FIRMWARE}.zip you were served,"
     echo "and with the [${FIRMWARE}] section of UPSTREAM."
     echo "If those differ but the contents sha256 matches, the two builds hold the"
     echo "same files and you are looking at a zlib difference, not a code difference."

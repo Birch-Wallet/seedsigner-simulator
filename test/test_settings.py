@@ -1,19 +1,17 @@
 """
-Change a setting through the wallet's own menus and see that it takes.
+Change a setting through the firmware's own menus and see that it takes.
 
-This exists because it did not, and nothing here noticed. Settings.save()
-debounces its write behind a threading.Timer, the worker shimmed Thread but not
-Timer, and so every settings change died on a System Error screen: the network
-selector among them, which is the first thing anyone testing against a test
-network has to touch. Fifteen tests passed throughout.
+This exists because it once did not, and nothing noticed: every settings
+change died on a System Error screen, the network selector among them, which is
+the first thing anyone testing against a test network has to touch.
 
-The wallet's settings live in an in-memory filesystem, so nothing here survives
+The firmware's settings live in an in-memory filesystem, so nothing here survives
 a reload, and that is the point: this asks whether the change works at all, not
 whether it persists.
 
 It also checks the network indicator under the device and the two halves of the
 warning above it, and this is the file to check them in: neither is worth
-anything unless it follows a change made through the wallet's own menus, which is
+anything unless it follows a change made through the firmware's own menus, which is
 what the route below is.
 """
 
@@ -27,15 +25,15 @@ from harness import check, report
 from playwright.sync_api import sync_playwright
 
 # Home is a two by two grid, Scan and Seeds above Tools and Settings, so down
-# then right is Settings whichever tile the wallet starts on.
+# then right is Settings whichever tile the firmware starts on.
 TO_SETTINGS = ("ArrowDown", "ArrowRight", "Enter")
 
-# Settings, then six down to Advanced, then the first entry inside it, which is
-# the Bitcoin network. Chosen deliberately over the first setting in the list:
-# this one has options the device is not already on, so accepting one is a real
-# change, and it is the setting anybody pointing the simulator at a test network
-# has to reach.
-TO_NETWORK = ("ArrowDown",) * 6 + ("Enter", "Enter")
+# Settings, then three down past Language, Persistent settings and Denomination
+# to Advanced, then the first entry inside it, which is the Bitcoin network.
+# Chosen deliberately over the first setting in the list: this one has options
+# the device is not already on, so accepting one is a real change, and it is the
+# setting anybody pointing the simulator at a test network has to reach.
+TO_NETWORK = ("ArrowDown",) * 3 + ("Enter", "Enter")
 
 # The selection screen opens on the current value, which is Testnet, and Mainnet
 # is the entry above it. Deliberately that way round: mainnet is the answer the
@@ -72,7 +70,7 @@ def indicator(page):
     The label itself is one word in the corner of the shell, and CSS sets it in
     capitals; the whole phrase lives on its title, which is what is compared
     here so the assertion reads like the sentence a visitor would say. Both come
-    off the same event from the wallet, so neither can be right on its own.
+    off the same event from the firmware, so neither can be right on its own.
     """
     label = page.locator("#network")
     assert label.inner_text().strip().lower() in label.get_attribute("title").lower()
@@ -85,21 +83,23 @@ def main() -> int:
         browser = p.chromium.launch()
         page = browser.new_page()
         log = harness.Log(page)
-        page.goto(harness.wallet_url())
-        log.wait("MainMenuScreen", 240, "the wallet to boot")
+        page.goto(harness.sim_url())
+        log.wait("MainMenuScreen", 240, "the firmware to boot")
 
         # SeedSigner's own default is Mainnet. This one comes up on Testnet
-        # because settings.json says so before the wallet reads it, which is
+        # because settings.json says so before the firmware reads it, which is
         # configuration and not a patch, and it is the whole reason a visitor
         # can be pointed at a test network without being told to go and change
-        # something first. Read off the page, which was told by the wallet.
+        # something first. Read off the page, which was told by the firmware.
         check("a fresh page comes up on Testnet",
               indicator(page) == ("Bitcoin network: Testnet", False),
               str(indicator(page)))
         page.locator("#about > summary").click()
-        check("and describes our test network in About while it is on one",
-              page.locator("#about .note").is_visible()
-              and "Bitsaga Signet is a test network" in page.locator("#about .note").inner_text())
+        about = page.locator("#about > div").inner_text()
+        check("About opens, and names no outside origin the page talks to",
+              page.locator("#about > div").is_visible()
+              and "signet" not in about.lower() and "origin is mine" not in about.lower(),
+              about[:200])
         page.locator("#about > summary").click()
         said, mainnet_half = warning(page)
         check("the warning is the short one on Testnet",
@@ -107,7 +107,7 @@ def main() -> int:
               and page.locator("#warning > strong").is_visible()
               and said == ALWAYS and not mainnet_half,
               said)
-        page.screenshot(path=harness.firmware_artifact("network-testnet.png"), full_page=True)
+        page.screenshot(path=harness.artifact("network-testnet.png"), full_page=True)
 
         for key in TO_SETTINGS:
             page.keyboard.press(key)
@@ -124,8 +124,7 @@ def main() -> int:
               log.last_screen())
 
         # Testnet to Mainnet, which is a real change, so the view calls
-        # set_value, which calls Settings.save(), which is where the missing
-        # Timer used to raise.
+        # set_value, and the firmware has to come back from writing it.
         changed = log.mark()
         for key in TO_MAINNET:
             page.keyboard.press(key)
@@ -139,32 +138,21 @@ def main() -> int:
               log.last_screen())
         check("no error screen", not log.seen("SystemError|Traceback", since=since),
               "the settings write raised")
-        check("the debounced write ran inline",
-              log.seen("timer inline", since=since) is not None,
-              "Settings.save()'s Timer never fired, so nothing was written")
-        # And the wallet came back from it, which it did not until the locks
+        # And the firmware came back from it, which it did not until the locks
         # were made reentrant. Running the debounced write inline runs it inside
         # the lock save() holds while scheduling it, and one thread taking a
         # plain Lock twice waits for itself forever: the value was stored, the
         # screen stayed up looking correct, and nothing ever drew again.
-        check("and the wallet came back from it rather than wedging",
+        check("and the firmware came back from it rather than wedging",
               log.seen(r"display\(\) enter", since=changed) is not None,
               "nothing drew after the settings write")
 
         # The indicator is fed by the worker reading Settings back after the
-        # wallet writes them, so this is the wallet's new value arriving rather
+        # firmware writes them, so this is the firmware's new value arriving rather
         # than the page guessing what the keypresses above meant.
-        check("the network indicator follows the wallet, loudly",
+        check("the network indicator follows the firmware, loudly",
               indicator(page) == ("Bitcoin network: Mainnet", True),
               str(indicator(page)))
-        # A visitor who has gone to mainnet on purpose is not being taught
-        # anything, and should not be handed a test network to play on.
-        page.locator("#about > summary").click()
-        check("and About stops describing our test network on Mainnet",
-              page.locator("#about > div").is_visible()
-              and page.locator("#about .note").count() == 1
-              and not page.locator("#about .note").is_visible())
-        page.locator("#about > summary").click()
         # The short half stays: what changed is that the page now holds real
         # mainnet keys, not whether a seed you rely on may be typed into it.
         said, mainnet_half = warning(page)
@@ -172,9 +160,9 @@ def main() -> int:
               page.locator("#warning > strong").is_visible()
               and mainnet_half and said == ALWAYS + ONLY_ON_MAINNET,
               said)
-        page.screenshot(path=harness.firmware_artifact("network-mainnet.png"), full_page=True)
+        page.screenshot(path=harness.artifact("network-mainnet.png"), full_page=True)
 
-        harness.save_screen(page, harness.firmware_artifact("settings-changed.png"))
+        harness.save_screen(page, harness.artifact("settings-changed.png"))
         browser.close()
 
     return report()

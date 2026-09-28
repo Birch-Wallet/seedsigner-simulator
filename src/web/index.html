@@ -3,471 +3,699 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="index,follow,max-image-preview:large">
-  <link rel="canonical" href="https://bitsaga.be/seedsigner-simulator/">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
-<title>SeedSigner simulator · Bitsaga</title>
+<title>SeedSigner Web Simulator</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="theme-color" content="#07111f">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="SeedSigner">
 <style>
-  /* The two faces bitsaga.be uses, kept in this directory so the page stays
-     self-contained. Nothing is fetched off-origin; if the files ever go
-     missing, font-display swaps in system-ui and the page is unharmed. */
-  @font-face {
-    font-family: Outfit; font-style: normal; font-weight: 100 900; font-display: swap;
-    src: url("fonts/outfit_v15_QGYvz_MVcBeNP4NJtEtq.woff2") format("woff2");
-  }
-  @font-face {
-    font-family: "Space Grotesk"; font-style: normal; font-weight: 100 900; font-display: swap;
-    src: url("fonts/spacegrotesk_v22_V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2") format("woff2");
-  }
-
-  :root {
-    color-scheme: dark;
-    --radius: 38px;
-    --paper: #f9fbfc;
-    --charcoal: #07111f;
-    --orange: #f7931a;
-    --amber: #ffc64d;
-    --display: "Space Grotesk", Outfit, system-ui, sans-serif;
-  }
-  @media (max-width: 520px) { :root { --radius: 32px; } }
-
-  * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
+  :root { color-scheme: dark; }
   body {
-    margin: 0; background: var(--charcoal); color: var(--paper);
-    font-family: Outfit, system-ui, sans-serif; -webkit-font-smoothing: antialiased;
-    overflow-x: hidden;
+    margin: 0; padding: 2rem 1rem; background: #0b0c0e; color: #d7dbe0;
+    font: 15px/1.6 ui-sans-serif, system-ui, sans-serif;
+    display: flex; flex-direction: column; align-items: center; gap: 1rem;
+    box-sizing: border-box; min-height: 100vh; min-height: 100dvh;
   }
-  a { color: inherit; text-decoration: none; }
-  h1, h2, h3 { font-family: var(--display); font-weight: 650; letter-spacing: -.055em; margin: 0; }
-
-  .shell { width: min(1220px, calc(100% - 24px)); margin-inline: auto; }
-
-  .eyebrow {
-    margin: 0 0 16px; color: var(--amber); font-size: 12px; line-height: 1;
-    font-weight: 950; text-transform: uppercase; letter-spacing: .22em;
+  h1, .warn { max-width: min(46rem, 100%); }
+  h1 { text-align: center; }
+  #device { width: 100%; }
+  #stage {
+    position: relative; width: 100%; max-width: min(68rem, 100%);
+    display: flex; flex-direction: column; align-items: center; gap: 1rem;
   }
-  .lead {
-    max-width: 640px; margin: 26px 0 0; color: rgba(255, 249, 239, .68);
-    font-size: clamp(17px, 1.4vw, 22px); line-height: 1.5;
+  #stage-device {
+    position: relative; width: 100%;
+    display: flex; flex-direction: column; align-items: center; gap: .5rem;
   }
-
-  /* --- nav ------------------------------------------------------------- */
-  .nav {
-    position: fixed; z-index: 80; top: 18px; left: 50%; transform: translateX(-50%);
-    width: min(1220px, calc(100% - 24px));
-    display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 18px;
-    padding: 13px 14px;
-    border: 1px solid rgba(255, 255, 255, .32); border-radius: var(--radius);
-    background: rgba(7, 17, 31, .68); backdrop-filter: blur(32px) saturate(1.3);
-    box-shadow: 0 22px 70px rgba(7, 17, 31, .24), inset 0 1px 0 rgba(255, 255, 255, .14);
+  #device-band {
+    position: relative; z-index: 4; width: 100%;
+    display: flex; flex-wrap: wrap; align-items: center;
+    justify-content: center; gap: .5rem;
   }
-  .brand {
-    display: flex; align-items: baseline; gap: 9px; padding-left: 10px;
-    font-family: var(--display); font-size: 21px; font-weight: 650; letter-spacing: -.04em;
+  #network-line { display: flex; align-items: center; justify-content: center; }
+  #network-line:has(#network:empty) { display: none; }
+  #network {
+    margin: 0; font-size: .68rem; letter-spacing: .06em;
+    text-transform: uppercase; color: #656c76;
   }
-  .brand small {
-    font-family: Outfit, system-ui, sans-serif; font-size: 11px; font-weight: 850;
-    text-transform: uppercase; letter-spacing: .18em; color: rgba(255, 249, 239, .5);
+  #warn-row {
+    display: flex; flex-wrap: nowrap; align-items: center; justify-content: center;
+    gap: .5rem; width: 100%;
   }
-  .links { display: flex; gap: 4px; font-size: 12px; font-weight: 850; text-transform: uppercase; letter-spacing: .13em; }
-  .links a { padding: 10px 13px; border-radius: 999px; color: rgba(255, 249, 239, .88); }
-  .links a:hover { background: rgba(255, 249, 239, .12); color: #fff9ef; }
-
-  /* --- buttons, lifted from the site ----------------------------------- */
-  .btn {
-    display: inline-flex; min-height: 50px; align-items: center; justify-content: center;
-    padding: 0 22px; border: 1px solid rgba(255, 249, 239, .24); border-radius: 999px;
-    font: inherit; font-weight: 900; cursor: pointer;
+  #warn-row .warn { flex: 0 1 auto; min-width: 0; }
+  @media (max-width: 30rem) {
+    body:not(.mainnet) #warn-row .warn { font-size: .82em; padding: .45rem .6rem; }
   }
-  .btn.primary {
-    position: relative; overflow: hidden; border: 1px solid transparent; color: #fff7e8;
-    background:
-      linear-gradient(135deg, rgba(255, 154, 31, .96), rgba(247, 147, 26, .94) 46%, rgba(216, 111, 8, .92)) padding-box,
-      linear-gradient(135deg, rgba(247, 147, 26, .44), rgba(216, 111, 8, .58) 46%, rgba(255, 244, 214, .08) 62%, rgba(168, 82, 0, .46)) border-box;
-    box-shadow: 0 10px 24px rgba(247, 147, 26, .22), 0 2px 8px rgba(159, 90, 0, .10),
-      inset 0 1px 0 rgba(255, 244, 214, .18), inset 0 -5px 12px rgba(90, 43, 0, .08);
-    text-shadow: 0 1px 9px rgba(64, 25, 4, .38);
-    transition: filter .25s ease, box-shadow .25s ease, transform .25s ease;
+  #warn-row #about, #warn-row #fullscreen { flex: none; }
+  #screen {
+    display: block; width: 100%; height: 100%;
+    image-rendering: pixelated; background: #000;
   }
-  .btn.primary::after {
-    content: ""; position: absolute; inset: 1px; border-radius: inherit; pointer-events: none;
-    background:
-      linear-gradient(115deg, transparent 6%, rgba(255, 244, 214, .10) 24%, transparent 40%),
-      radial-gradient(circle at 24% 0%, rgba(247, 147, 26, .08), transparent 34%);
-    mix-blend-mode: screen;
+  #boot {
+    z-index: 3; pointer-events: none;
+    display: flex; flex-direction: column; align-items: center; gap: .3rem;
+    line-height: 1.35;
   }
-  .btn.primary:hover {
-    transform: translateY(-1px); filter: saturate(1.06) brightness(1.04);
-    box-shadow: 0 14px 30px rgba(247, 147, 26, .26), 0 3px 12px rgba(159, 90, 0, .12),
-      inset 0 1px 0 rgba(255, 244, 214, .20), inset 0 -5px 12px rgba(90, 43, 0, .08);
+  #boot.loading {
+    position: absolute; left: 0; right: 0; top: 50%;
+    transform: translateY(-50%);
   }
-  .btn.light {
-    position: relative; overflow: hidden; color: #fff4d6;
-    border: 1px solid rgba(247, 147, 26, .42);
-    background: linear-gradient(135deg, rgba(255, 249, 239, .10), rgba(255, 249, 239, .045));
-    backdrop-filter: blur(12px) saturate(1.08);
-    box-shadow: 0 14px 34px rgba(0, 0, 0, .18), inset 0 1px 0 rgba(255, 244, 214, .12);
-    transition: filter .25s ease, box-shadow .25s ease, transform .25s ease, border-color .25s ease, background .25s ease;
+  #status {
+    margin: 0; text-align: center;
+    font-size: .82rem; letter-spacing: .05em; text-transform: uppercase;
+    color: #8b939e;
   }
-  .btn.light::after {
-    content: ""; position: absolute; left: 18px; right: 18px; top: 0; height: 1px; pointer-events: none;
-    background: linear-gradient(90deg, transparent, rgba(247, 147, 26, .62), transparent);
+  #status:empty { display: none; }
+  #status.ready { color: #22c55e; }
+  #status.err {
+    position: static; inset: auto;
+    max-width: 70ch; color: #ef4444;
+    white-space: pre-wrap; text-transform: none; letter-spacing: normal;
+    font-size: .9em; text-align: center;
   }
-  .btn.light:hover {
-    transform: translateY(-1px); border-color: rgba(247, 147, 26, .68); filter: brightness(1.04);
-    background: linear-gradient(135deg, rgba(247, 147, 26, .18), rgba(255, 249, 239, .055));
+  #boot-load {
+    display: none; align-items: center; justify-content: center;
+    gap: .45rem; margin: 0;
   }
-  .navcta { padding: 14px 22px; min-height: 0; font-size: 14px; font-weight: 950; justify-self: end; }
-  .actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 32px; }
-
-  /* --- hero ------------------------------------------------------------ */
-  .hero {
-    position: relative; overflow: hidden;
-    padding: clamp(118px, 15vh, 176px) 0 clamp(64px, 8vh, 104px);
-    background:
-      radial-gradient(circle at 14% 8%, rgba(74, 111, 165, .30), transparent 26rem),
-      radial-gradient(circle at 86% 22%, rgba(247, 147, 26, .13), transparent 25rem),
-      linear-gradient(180deg, #0b1728, #07111f);
+  #boot.loading #boot-load { display: flex; }
+  #boot-pixels { display: grid; grid-template-columns: repeat(3, 4px); gap: 1.5px; }
+  #boot-pixels span {
+    width: 4px; height: 4px; border-radius: 50%;
+    background: #e6eaef; opacity: .15;
   }
-  .hero-grid {
-    display: grid; grid-template-columns: minmax(0, 1.02fr) minmax(0, .98fr);
-    gap: clamp(34px, 5vw, 76px); align-items: center;
+  #boot-label {
+    font-size: .82rem; font-weight: 600; letter-spacing: .06em;
+    text-transform: uppercase; color: #e6eaef;
   }
-  .hero-grid.no-device { grid-template-columns: minmax(0, 1fr); }
-  .hero h1 {
-    font-size: clamp(42px, 5.4vw, 82px); line-height: .92; letter-spacing: -.062em;
-    text-wrap: balance; max-width: 12ch;
+  #boot-elapsed {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .76rem; font-variant-numeric: tabular-nums; color: #767d87;
   }
-  .hero h1 em { position: relative; display: inline-block; font-style: italic; color: #fff8eb; }
-  .hero h1 em::after {
-    content: ""; position: absolute; left: 0; right: 0; bottom: -.03em; height: 2px;
-    background: var(--orange); transform-origin: left center; transform: scaleX(.96); opacity: .95;
+  @media (prefers-reduced-motion: no-preference) {
+    #boot-pixels span { animation: pixel-on 650ms ease-in-out infinite; }
+    #boot-pixels span:nth-child(4) { animation-delay: 0ms; }
+    #boot-pixels span:nth-child(1),
+    #boot-pixels span:nth-child(5),
+    #boot-pixels span:nth-child(7) { animation-delay: 90ms; }
+    #boot-pixels span:nth-child(2),
+    #boot-pixels span:nth-child(6),
+    #boot-pixels span:nth-child(8) { animation-delay: 180ms; }
+    #boot-pixels span:nth-child(3),
+    #boot-pixels span:nth-child(9) { animation-delay: 270ms; }
+    #boot-label {
+      color: transparent;
+      background-image: linear-gradient(90deg, #8b939e 35%, #e6eaef 50%, #8b939e 65%);
+      background-size: 200% 100%;
+      -webkit-background-clip: text; background-clip: text;
+      animation: shimmer-text 1.4s linear infinite;
+    }
   }
-
-  .facts {
-    position: relative; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
-    max-width: 850px; margin: clamp(28px, 3vw, 44px) auto 0;
-    border-radius: var(--radius); overflow: hidden;
-    background: rgba(255, 249, 239, .18);
+  @keyframes pixel-on {
+    0%, 100% { opacity: .15; }
+    18%, 42% { opacity: 1; }
+    62% { opacity: .15; }
   }
-  .facts::after {
-    content: ""; position: absolute; inset: 0; border-radius: var(--radius); padding: 2px;
-    background: linear-gradient(90deg, rgba(255, 255, 255, .15), rgba(74, 111, 165, .25), rgba(247, 147, 26, .35));
-    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; z-index: 2;
+  @keyframes shimmer-text {
+    from { background-position: 150%; }
+    to { background-position: -50%; }
   }
-  .facts span {
-    position: relative; z-index: 1; background: rgba(7, 17, 31, .54); backdrop-filter: blur(12px);
-    padding: 16px 12px; min-height: 62px; font-size: 13px; font-weight: 850;
-    color: rgba(255, 249, 239, .82); display: grid; place-items: center; text-align: center;
+  #camera-hint {
+    margin: .5rem auto 0; max-width: 44ch; color: #ef4444;
+    font-size: .85em; text-align: center;
   }
-
-  /* --- device ---------------------------------------------------------- */
-  .device-wrap { display: grid; justify-items: center; width: 100%; min-width: 0; }
-  /* The renderer sizes its container in px, so the whole lockup - SVG, screen
-     slot and glass - has to be scaled as one thing to stay registered. Taking
-     the scaler out of flow keeps that fixed width from blowing out the grid;
-     the stage's height is set in script to match whatever the scale works out to. */
-  .device-stage { position: relative; width: 100%; max-width: 520px; min-width: 0; margin-inline: auto; }
-  .device-scaler { position: absolute; top: 0; left: 50%; width: max-content; transform-origin: top left; }
-  #screen { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
-
-  /* --- safety notice --------------------------------------------------- */
-  .notice { padding: clamp(56px, 8vw, 96px) 0; background: #050b14; }
-  .notice-card {
-    position: relative; padding: clamp(26px, 4vw, 48px) clamp(24px, 4vw, 54px);
-    border: 1px solid rgba(255, 255, 255, .10); border-radius: 0 var(--radius) var(--radius) 0;
-    background: linear-gradient(145deg, rgba(20, 45, 72, .62), rgba(9, 23, 40, .62));
+  #camera-hint:empty { display: none; }
+  header {
+    display: flex; flex-wrap: wrap; align-items: center;
+    justify-content: center; gap: .5rem;
   }
-  .notice-card::before {
-    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; border-radius: 2px;
-    background: linear-gradient(180deg, transparent 0%, transparent 20%, rgba(247, 147, 26, .38) 34%,
-      rgba(247, 147, 26, .95) 50%, rgba(247, 147, 26, .38) 66%, transparent 80%, transparent 100%);
-    box-shadow: 0 0 16px rgba(247, 147, 26, .26);
+  h1 { font-size: 1.6rem; margin: 0; font-weight: 600; }
+  #about > summary {
+    list-style: none; cursor: pointer; width: 2.6rem; height: 2.6rem;
+    border-radius: 50%; border: 1px solid #3a4048; color: #9aa3ae;
+    display: grid; place-items: center; font: italic 600 1rem/1 serif;
+    position: relative; z-index: 91;
   }
-  .notice h2 { font-size: clamp(26px, 3vw, 42px); line-height: 1.04; margin-bottom: 6px; }
-  .notice-grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
-    gap: clamp(20px, 3vw, 44px); margin-top: 28px;
+  #about[open] > summary { color: #f7931a; border-color: #f7931a; }
+  #about > summary::-webkit-details-marker { display: none; }
+  #about > summary:hover { color: #f7931a; border-color: #f7931a; }
+  #about[open]::before {
+    content: ""; position: fixed; left: 0; right: 0; top: 0; z-index: 90;
+    height: var(--about-top, 5rem); background: #0b0c0e;
   }
-  .notice-grid p { margin: 0; color: rgba(255, 249, 239, .66); line-height: 1.66; font-size: 15.5px; }
-  .notice-grid strong { color: var(--paper); font-weight: 850; }
-
-  /* --- how it works ---------------------------------------------------- */
-  .how {
-    position: relative; overflow: hidden; padding: clamp(80px, 11vw, 150px) 0;
-    background: linear-gradient(135deg, #050b14 0%, #07111f 28%, #0d2138 52%, #091827 74%, #050b14 100%);
-    border-block: 1px solid rgba(255, 255, 255, .10);
+  #about > div {
+    position: fixed; inset: 0; z-index: 89; box-sizing: border-box;
+    background: #0b0c0e; color: #c3cad3; text-align: left;
+    padding: var(--about-top, 5rem) 1.15rem 3rem;
+    overflow-y: auto; overscroll-behavior: contain;
+    font-size: 1rem; line-height: 1.65;
   }
-  .how::before {
-    content: ""; position: absolute; inset: 0; pointer-events: none;
-    background:
-      radial-gradient(circle at 82% 18%, rgba(247, 147, 26, .10), transparent 24rem),
-      radial-gradient(circle at 18% 82%, rgba(74, 111, 165, .18), transparent 30rem);
+  #about > div > * { max-width: 34rem; margin-inline: auto; }
+  #about > div p { margin: 0 auto 1.15em; }
+  #about > div p strong { color: #e6eaef; }
+  #about > div ul { margin: 0 auto 1.15em; padding-left: 1.1rem; box-sizing: border-box; }
+  #about > div li { margin: 0 0 .6em; }
+  #about > div li strong { color: #e6eaef; }
+  #about > div a { color: #f7931a; }
+  #about #build { max-width: 34rem; margin-inline: auto; }
+  .warn {
+    color: #f18f8f; font-size: .9em; text-align: center; margin: 0;
+    border: 1px solid #7f1d1d; background: #1b0f10;
+    border-radius: 8px; padding: .5rem .9rem;
   }
-  .how .shell { position: relative; z-index: 1; }
-  .how h2 { font-size: clamp(34px, 4.4vw, 64px); line-height: .98; max-width: 18ch; }
-  .how-head { padding-bottom: clamp(34px, 5vw, 62px); margin-bottom: clamp(40px, 5vw, 68px); border-bottom: 1px solid rgba(255, 255, 255, .14); }
-  .how-list {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
-    border: 1px solid rgba(255, 255, 255, .11); background: rgba(255, 255, 255, .10);
-    border-radius: var(--radius); overflow: hidden;
+  .mainnet-only { display: none; }
+  body.mainnet .mainnet-only { display: inline; }
+  body.mainnet #network {
+    color: #e8c07a; border: 1px solid #4a3d22; background: #211b10;
+    border-radius: 6px; padding: .05rem .55rem;
   }
-  .how-card {
-    background: linear-gradient(180deg, rgba(12, 26, 43, .92), rgba(7, 17, 31, .96));
-    padding: clamp(28px, 3.4vw, 48px); display: grid; align-content: start; gap: 16px;
+  body.mainnet .warn { color: #ff9c9c; border-color: #b91c1c; background: #290e0e; }
+  #build { margin-top: 1.4rem; border-top: 1px solid #2a2f36; padding-top: .2rem; }
+  #build a { color: #f7931a; }
+  #firmware-line { margin: 0 0 1rem; }
+  #build h3 { font-size: 1em; font-weight: 600; color: #d7dbe0; margin: 1.2rem 0 .5rem; }
+  #build dl {
+    display: grid; grid-template-columns: max-content 1fr; gap: .35rem .9rem; margin: 0;
   }
-  .how-card .tag { font-size: 12px; text-transform: uppercase; letter-spacing: .16em; color: var(--orange); font-weight: 950; }
-  .how-card h3 { font-size: clamp(23px, 2.3vw, 32px); line-height: 1; letter-spacing: -.04em; }
-  .how-card p { margin: 0; color: rgba(255, 249, 239, .66); line-height: 1.68; font-size: 15.5px; }
-
-  .how-source {
-    margin: 26px 4px 0; color: rgba(255, 249, 239, .55); font-size: 14.5px; line-height: 1.6;
-    max-width: 68ch;
+  #build dt { color: #7c848f; }
+  #build dd { margin: 0; }
+  #build .hash {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .92em; word-break: break-all;
   }
-  .how-source a,
-  .notice-grid a { color: #f3a13d; text-decoration: underline; text-underline-offset: 3px; }
-  .how-source code { font-size: .92em; color: rgba(255, 249, 239, .72); }
-
-  /* --- footer ----------------------------------------------------------- */
-  .footer { background: #050b14; color: rgba(255, 249, 239, .62); padding: 46px 0 30px; font-size: 13px; }
-  .footer-row { display: flex; flex-wrap: wrap; gap: 14px 26px; align-items: center; justify-content: space-between; }
-  .footer a { color: rgba(255, 249, 239, .58); }
-  .footer a:hover { color: rgba(255, 249, 239, .9); }
-  .footer-note { margin: 22px 0 0; padding-top: 20px; border-top: 1px solid rgba(255, 249, 239, .12);
-    font-size: 11px; line-height: 1.7; color: rgba(255, 249, 239, .42); }
-
-  @media (max-width: 980px) {
-    .links { display: none; }
-    .nav { grid-template-columns: 1fr auto; gap: 12px; padding: 11px 12px; }
-    .navcta { padding: 12px 16px; font-size: 13px; }
-    .hero-grid { grid-template-columns: minmax(0, 1fr); gap: 46px; }
-    .hero h1 { max-width: 14ch; }
-    .how-list { grid-template-columns: 1fr; }
+  #build .deps {
+    display: flex; flex-wrap: wrap; gap: .15rem .9rem;
+    list-style: none; padding: 0; margin: .5rem 0 0;
   }
-  @media (max-width: 640px) {
-    .brand small { display: none; }
-    .facts { grid-template-columns: 1fr; }
+  #build .deps li { overflow-wrap: anywhere; }
+  #build .deps b { color: #d7dbe0; font-weight: 500; }
+  #build .verdict {
+    margin: .8rem 0 0; border: 1px solid #2a2f36; border-radius: 6px; padding: .45rem .7rem;
   }
-  @media (max-width: 520px) {
-    .actions .btn { width: 100%; }
-    .hero h1 { font-size: clamp(38px, 11vw, 54px); }
+  #build .verdict[data-state=match] { color: #f7931a; border-color: #f7931a; background: #16181c; }
+  #build .verdict[data-state=differs] { color: #ef4444; border-color: #7f1d1d; background: #1b0f10; }
+  #build .limit, #build .links { margin: .6rem 0 0; color: #9aa3ae; }
+  .offscreen {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+  }
+  #fullscreen {
+    display: none; align-items: center; justify-content: center; gap: 0;
+    min-width: 2.6rem; min-height: 2.6rem;
+    font: inherit; font-size: .9em; color: #8b939e;
+    background: #1d2026; border: 1px solid #2a2e35; border-radius: 5px;
+    padding: .5rem .55rem; cursor: pointer;
+  }
+  #fullscreen svg {
+    width: 1.4em; height: 1.4em; flex: none;
+    fill: none; stroke: currentColor; stroke-width: 1.6;
+    stroke-linecap: round; stroke-linejoin: round;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    #fullscreen svg path { transition: d .18s ease; }
+  }
+  #fullscreen:hover { color: #d7dbe0; border-color: #3a3f47; }
+  #fullscreen[aria-pressed=true] { color: #f7931a; border-color: #f7931a; background: #16181c; }
+  #fullscreen:focus-visible { outline: 2px solid #f7931a; outline-offset: 2px; }
+  @media (max-width: 46rem), (max-height: 30rem) {
+    body.touch #fullscreen { display: inline-flex; }
+  }
+  body.solo { overflow: hidden; }
+  body.solo #about { display: none; }
+  body.solo #stage-device { position: static; z-index: auto; background: none; }
+  body.solo #device-band { z-index: auto; }
+  body.solo::before { content: ""; position: fixed; inset: 0; z-index: 49; background: #0b0c0e; }
+  body.solo #device {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 50;
+    width: min(100svw, calc(100svh * var(--ssd-aspect, 2))) !important;
+    max-width: none !important;
+  }
+  @media (orientation: portrait) {
+    body.touch.solo #device {
+      transform: translate(-50%, -50%) rotate(90deg);
+      width: min(100svh, calc(100svw * var(--ssd-aspect, 2))) !important;
+    }
+    body.touch.solo #fullscreen { transform: rotate(90deg); top: auto; bottom: .5rem; right: .5rem; }
+  }
+  body.solo #fullscreen { position: fixed; z-index: 62; top: .5rem; right: .5rem; }
+  @media (max-width: 30rem) {
+    body { padding: 1rem .75rem; gap: .75rem; }
+    h1 { font-size: 1.3rem; }
+    #build dl { grid-template-columns: 1fr; gap: 0; }
+    #build dd { margin: 0 0 .5rem; }
   }
 </style>
 </head>
 <body>
-
-<nav class="nav">
-  <a class="brand" href="https://bitsaga.be/">bitsaga<small>Simulator</small></a>
-  <div class="links">
-    <a href="https://bitsaga.be/">Home</a>
-    <a href="https://bitsaga.be/services">Services</a>
-    <a href="https://bitsaga.be/insights">Insights</a>
-    <a href="/shop/">Products</a>
-  </div>
-  <a class="btn primary navcta" href="wallet.html">Open the simulator</a>
-</nav>
-
-<header class="hero">
-  <div class="shell">
-    <div class="hero-grid">
+  <header>
+    <h1>SeedSigner Web Simulator</h1>
+  </header>
+  <div id="warn-row">
+    <p class="warn" id="warning"><strong>Never enter a real seed
+    phrase</strong><span class="mainnet-only"
+    id="warning-mainnet">. On Mainnet this page holds the real mainnet keys for
+    whatever you give it, with no secure element under them: treat anything typed
+    in as public.</span></p>
+    <details id="about">
+      <summary aria-label="About this simulator" title="About this simulator">i</summary>
       <div>
-        <p class="eyebrow">SeedSigner &middot; in your browser</p>
-        <h1>Hold the device before you <em>buy</em> it.</h1>
-        <p class="lead">A real SeedSigner, not a video and not a mock-up. The firmware
-        runs in this tab, draws its own 320&times;240 screen, and scans QR codes through
-        your webcam. Nothing to install, nothing to buy first.</p>
-        <div class="actions">
-          <a class="btn primary" href="wallet.html">Open the wallet simulator</a>
-          <a class="btn light" href="#how">How it works</a>
+        <p><strong>Never treat this as secure.</strong> Not on a phone, and not
+        on an airgapped laptop with the network unplugged. Making device firmware
+        run in a browser took a great deal of custom wiring, any of which could
+        have introduced a critical bug. Treat every key it shows as public and
+        never enter a seed phrase you rely on.</p>
+
+        <p><strong>This is device firmware, not a re-creation of it.</strong> The
+        Python that runs on a SeedSigner runs here, under Pyodide (CPython
+        compiled to WebAssembly). Nothing in the firmware is patched, and the
+        release it is built from is rebuilt below.</p>
+
+        <div id="build">
+          <h3>What is running</h3>
+          <p id="firmware-line">Running stock SeedSigner 0.8.7, the firmware a
+          plain SeedSigner runs.</p>
+          <dl>
+            <dt>Firmware</dt><dd id="build-firmware">…</dd>
+            <dt>Upstream</dt><dd><a id="build-repo" rel="noopener"></a></dd>
+            <dt>Tag</dt><dd><a id="build-tag" rel="noopener"></a></dd>
+            <dt>Commit</dt><dd><a id="build-commit" class="hash" rel="noopener"></a></dd>
+            <dt>Interpreter</dt><dd>Pyodide <span id="build-pyodide"></span>, CPython compiled to WebAssembly</dd>
+          </dl>
+          <p>The firmware is pinned to a published SeedSigner release, by tag and
+          by commit, rather than to a branch. A branch moves and can be rewritten
+          out from under a rebuild; a published tag cannot.</p>
+
+          <h3>The firmware zip this page loaded, <span id="build-zip"></span></h3>
+          <dl>
+            <dt>published sha256</dt><dd class="hash" id="build-published"></dd>
+            <dt>what arrived here</dt><dd class="hash" id="build-computed"></dd>
+            <dt>published contents</dt><dd class="hash" id="build-contents"></dd>
+          </dl>
+          <p class="verdict" id="build-verdict" data-state="pending"></p>
+          <p class="limit">The page is checking itself, so this is a convenience and
+          not proof: only rebuilding the zip and comparing the hash is a check that
+          does not depend on this page being honest.</p>
+
+          <h3>What is in it</h3>
+          <p>The upstream tree at the commit above, this repository's stand-ins for
+          the hardware a browser does not have, and these pinned dependencies.
+          Nothing else.</p>
+          <ul class="deps" id="build-deps"></ul>
+
+          <p class="links">Check it yourself:
+          <a href="https://github.com/newtonick/seedsigner-simulator/blob/main/build/build-firmware-zip.sh" rel="noopener">rebuild the zip</a> ·
+          <a href="https://github.com/newtonick/seedsigner-simulator/actions/workflows/reproducible-build.yml" rel="noopener">the same rebuild on a clean runner</a> ·
+          <a href="https://github.com/newtonick/seedsigner-simulator/actions/workflows/test.yml" rel="noopener">tests</a> ·
+          <a href="https://github.com/newtonick/seedsigner-simulator/actions/workflows/upstream-tests.yml" rel="noopener">upstream's own tests</a> ·
+          <a href="https://github.com/newtonick/seedsigner-simulator" rel="noopener">source</a></p>
+        </div>
+
+        <p>Three things a browser cannot do, replaced from outside the firmware
+        and never inside it:</p>
+        <ul>
+          <li><strong>Display:</strong> the device's own driver renders the
+          frames; the page paints them at 320&times;240, pixel for pixel.</li>
+          <li><strong>Buttons:</strong> the worker is blocked inside the firmware's
+          main loop, so keys cross on a SharedArrayBuffer.</li>
+          <li><strong>Camera:</strong> your webcam. pyzbar has no WebAssembly
+          build, so decoding happens in the browser and reaches the unmodified
+          decoder unchanged.</li>
+        </ul>
+
+        <p><strong>Driving it.</strong> Press the drawn buttons, or the
+        keyboard: arrows move, Enter selects, 1 to 3 are the side buttons.</p>
+      </div>
+    </details>
+    <button type="button" id="fullscreen" aria-pressed="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path id="fs-tl" d="M4 9.5V4h5.5"></path>
+        <path id="fs-tr" d="M20 9.5V4h-5.5"></path>
+        <path id="fs-bl" d="M4 14.5V20h5.5"></path>
+        <path id="fs-br" d="M20 14.5V20h-5.5"></path>
+      </svg>
+      <span id="fullscreen-label" class="offscreen">Fill the screen</span>
+    </button>
+  </div>
+  <div id="stage">
+    <div id="stage-device">
+      <div id="device"></div>
+      <canvas id="screen" width="320" height="240"></canvas>
+      <div id="device-band">
+        <div id="boot">
+          <p id="boot-load">
+            <span id="boot-pixels" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span>
+            <span id="boot-label">Loading</span>
+            <span id="boot-elapsed">0.0s</span>
+          </p>
+          <p id="status">starting…</p>
         </div>
       </div>
-
-      <div class="device-wrap">
-        <div class="device-stage" id="device-stage" hidden>
-          <div class="device-scaler" id="device-scaler"><div id="device"></div></div>
-        </div>
+      <p id="camera-hint"></p>
+      <div id="network-line">
+        <p id="network"></p>
       </div>
     </div>
-
-    <div class="facts">
-      <span>Runs entirely offline</span>
-      <span>Real webcam QR scanning</span>
-      <span>Nothing to install</span>
-    </div>
   </div>
-</header>
-
-<section class="notice">
-  <div class="shell notice-card">
-    <p class="eyebrow">Before you touch it</p>
-    <h2>Never type a real seed phrase here.</h2>
-    <div class="notice-grid">
-      <p><strong>Not a wallet.</strong> It is a simulator, so you can try the device
-      before buying one. It is not audited and it is not the signed firmware build. Treat
-      every key it shows you as worthless. When you have real hardware,
-      <a href="https://verify.bitsaga.be">check the real firmware before you flash it</a>.</p>
-      <p><strong>A real SeedSigner is air-gapped</strong> precisely so your seed never
-      touches an internet-connected machine. Typing one into a browser &mdash; this one or
-      any other &mdash; defeats the entire point of the device.</p>
-      <p><strong>Nothing you type can leave.</strong> This page carries a content security
-      policy that forbids it from contacting any other server, and it loads nothing from
-      third parties. You need not take that on faith: once it has loaded, disconnect from
-      the internet and it keeps working, exactly like the hardware.</p>
-    </div>
-  </div>
-</section>
-
-<section class="how" id="how">
-  <div class="shell">
-    <div class="how-head">
-      <p class="eyebrow">What this actually is</p>
-      <h2>The device's own code, executed by your browser.</h2>
-      <p class="lead">No re-implementation and no screenshots stitched together. The
-      Python that ships on the hardware runs unmodified on WebAssembly, and only the
-      things it would touch in the physical world are stood in for.</p>
-    </div>
-    <div class="how-list">
-      <div class="how-card">
-        <span class="tag">Firmware</span>
-        <h3>Real, not re-created</h3>
-        <p>Pyodide puts CPython in the tab and the wallet boots into it. Every frame you
-        see is rendered by the device's own display code at its native 320&times;240,
-        pixel for pixel.</p>
-      </div>
-      <div class="how-card">
-        <span class="tag">Camera</span>
-        <h3>Your webcam is the lens</h3>
-        <p>The camera driver is wired to your webcam, so holding a genuine QR code up to
-        it &mdash; a PSBT, an xpub, a SeedQR &mdash; scans exactly as it would on the
-        hardware. Decoding happens in the tab; no frame is uploaded anywhere.</p>
-      </div>
-      <div class="how-card">
-        <span class="tag">Smartcard</span>
-        <h3>A card in the slot</h3>
-        <p>The SeedSigner Plus card reader is simulated too, so you can walk through the
-        smartcard flow &mdash; insert, unlock, store, wipe &mdash; without owning a card.</p>
-      </div>
-    </div>
-    <p class="how-source">The wallet is the <a href="https://github.com/3rdIteration/seedsigner" target="_blank" rel="noopener">3rdIteration smartcard fork</a> of SeedSigner, pinned to its <code>SeSi-0.8.7+ShSi-B11</code> release, the same tag the hardware image is built from. The simulator, and a build script that rebuilds this wallet from that pin so you can check that claim yourself, is on GitHub: <a href="https://github.com/bitsagarob/seedsigner-simulator" target="_blank" rel="noopener">bitsagarob/seedsigner-simulator</a>.</p>
-  </div>
-</section>
-
-
-<footer class="footer">
-  <div class="shell">
-    <div class="footer-row">
-      <span>Bitsaga &middot; Turnhout, Belgium</span>
-      <span>
-        <a href="https://bitsaga.be/">bitsaga.be</a> &middot;
-        <a href="https://bitsaga.be/contact">Contact</a> &middot;
-        <a href="https://seedsigner.com/" target="_blank" rel="noopener">SeedSigner project</a> &middot;
-        <a href="https://github.com/bitsagarob/seedsigner-simulator" target="_blank" rel="noopener">Source on GitHub</a>
-      </span>
-    </div>
-    <p class="footer-note">A simulator, for demonstration only. It is not audited
-    software, it is not the signed firmware release, and it must never be used to generate
-    or hold a key that guards real funds.</p>
-  </div>
-</footer>
 
 <script src="seedsigner-device.js"></script>
+<script src="camera.js"></script>
 <script>
-// The device art lives in its own file; if it has not been deployed the page
-// simply goes without the illustration rather than falling over.
-const DEVICE_SCALE = 1.5;
-const W = 320, H = 240;
-
-const stage = document.getElementById("device-stage");
-const scaler = document.getElementById("device-scaler");
-const container = document.getElementById("device");
-
-let device = null;
-
-// A SeedSigner-ish idle screen, so the illustration is not a dead black
-// rectangle before anyone has pressed anything.
-const IDLE_SCREEN = `
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240" width="100%" height="100%"
-     preserveAspectRatio="none" aria-hidden="true">
-  <rect width="320" height="240" fill="#000"/>
-  <text x="160" y="27" fill="#f9fbfc" font-family="Outfit, system-ui, sans-serif"
-        font-size="17" font-weight="600" text-anchor="middle">SeedSigner</text>
-  <rect x="18" y="42" width="284" height="1" fill="#2a2e35"/>
-  <g font-family="Outfit, system-ui, sans-serif" font-size="19" font-weight="500">
-    <rect x="18" y="54" width="284" height="40" rx="7" fill="#f7931a"/>
-    <text x="66" y="81" fill="#0b0c0e" font-weight="700">Scan</text>
-    <text x="66" y="127" fill="#d7dbe0">Seeds</text>
-    <text x="66" y="173" fill="#d7dbe0">Tools</text>
-    <text x="66" y="219" fill="#d7dbe0">Settings</text>
-  </g>
-  <g fill="none" stroke-width="2.6" stroke-linecap="round">
-    <path stroke="#0b0c0e" d="M36 70v-5h6M50 65h6v5M56 79v5h-6M42 84h-6v-5"/>
-    <path stroke="#7c848f" d="M36 121h20M36 113h20M40 129h12"/>
-    <path stroke="#7c848f" d="M38 167h16M46 159v16"/>
-    <path stroke="#7c848f" d="M38 213h16M46 205v16M40 207l12 12M52 207l-12 12"/>
-  </g>
-</svg>`;
-
-function fit() {
-  if (!device) return;
-  const k = Math.min(1, stage.clientWidth / device.width);
-  scaler.style.transform = "translateX(" + (-device.width * k / 2) + "px) scale(" + k + ")";
-  stage.style.height = device.height * k + "px";
-}
-
-function mount(interactive, onKey) {
-  device = window.SeedSignerDevice.render(container, {
-    screenWidth: W, screenHeight: H, scale: DEVICE_SCALE,
-    interactive: interactive, onKey: onKey,
-  });
-  fit();
-}
-
-if (window.SeedSignerDevice) {
-  stage.hidden = false;
-  mount(false, null);
-  device.screen.innerHTML = IDLE_SCREEN;
-  addEventListener("resize", fit);
-} else {
-  stage.closest(".hero-grid").classList.add("no-device");
-  stage.remove();
-}
-</script>
-
-<script>
-// Offline cache. Failure-tolerant: the page must behave identically without it.
 if ("serviceWorker" in navigator) {
   addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 }
-</script>
 
-<script src="wallet-track.js"></script>
-<script>
-// What this page is for is getting somebody into the simulator, so the only
-// thing worth counting on it is whether they went. Delegated and href-sniffed
-// rather than hung off each link, which is how the rest of bitsaga.be counts
-// its clicks (webapp/includes/footer.html) and which means a link added to this
-// page is counted without anybody remembering to wire it up.
-document.addEventListener("click", function (event) {
-  var link = event.target.closest && event.target.closest("a[href]");
-  if (!link || !window.Track) return;
-  var href = link.getAttribute("href") || "";
-  if (href === "wallet.html") {
-    // The same destination twice: the bar that follows you down the page, and
-    // the button in the hero. Which one gets pressed is the question.
-    window.Track.event("landing", "open-simulator", link.closest(".nav") ? "nav" : "hero");
-  } else if (href === "#how") {
-    window.Track.event("landing", "how-it-works", "hero");
-  } else if (href.indexOf("github.com") !== -1) {
-    window.Track.event("landing", "github", href);
+// ?debug=1 puts the firmware's narration on the console, which is what the tests read.
+const DEBUG = new URLSearchParams(location.search).has("debug");
+const BITCOIN_NETWORK = new URLSearchParams(location.search).get("network") === "mainnet" ? "M" : "T";
+
+let W = 320, H = 240;  // corrected by the worker once the renderer exists
+const canvas = document.getElementById("screen");
+const deviceEl = document.getElementById("device");
+const ctx = canvas.getContext("2d");
+const statusEl = document.getElementById("status");
+const deviceBand = document.getElementById("device-band");
+const cameraHint = document.getElementById("camera-hint");
+const networkEl = document.getElementById("network");
+
+// The loader and its clock follow the status line: up while it says something,
+// down once it is emptied or marked as an error.
+const bootEl = document.getElementById("boot");
+const elapsedEl = document.getElementById("boot-elapsed");
+let loadingFrom = 0, loadingTick = 0;
+function elapsedText(ms) {
+  const total = ms / 1000;
+  if (total < 60) return total.toFixed(1) + "s";
+  return Math.floor(total / 60) + "m " + (total % 60).toFixed(1) + "s";
+}
+function showElapsed() {
+  elapsedEl.textContent = elapsedText(performance.now() - loadingFrom);
+}
+function watchStatus() {
+  const loading = statusEl.parentNode === bootEl
+                  && statusEl.textContent !== "" && statusEl.className !== "err";
+  bootEl.classList.toggle("loading", loading);
+  if (loading === !!loadingTick) return;
+  if (loading) {
+    loadingFrom = performance.now();
+    showElapsed();
+    loadingTick = setInterval(showElapsed, 100);
+  } else {
+    clearInterval(loadingTick);
+    loadingTick = 0;
   }
-}, true);
+}
+new MutationObserver(watchStatus).observe(statusEl,
+  { childList: true, characterData: true, subtree: true, attributes: true });
+watchStatus();
+
+// The i panel covers the page, so a click outside it or Escape closes it.
+const aboutPanel = document.getElementById("about");
+document.addEventListener("pointerdown", (event) => {
+  if (aboutPanel.open && !aboutPanel.contains(event.target)) aboutPanel.open = false;
+});
+document.addEventListener("keydown", (event) => {
+  if (aboutPanel.open && event.key === "Escape") aboutPanel.open = false;
+});
+// Where the i actually is, so the panel's text starts below it.
+aboutPanel.addEventListener("toggle", () => {
+  if (!aboutPanel.open) return;
+  const icon = aboutPanel.querySelector("summary").getBoundingClientRect();
+  aboutPanel.style.setProperty("--about-top", Math.round(icon.bottom + 20) + "px");
+});
+
+// The build half of the i panel, read from seedsigner-stock.build-info.json, which
+// build/build-firmware-zip.sh writes beside the zip from the pins it built from.
+// The received hash is the worker's sha256 of the zip bytes it was served.
+let publishedHash = null;
+let receivedHash = null;
+
+function panelText(id, text) {
+  document.getElementById(id).textContent = text;
+}
+
+function panelLink(id, text, href) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.href = href;
+}
+
+function showVerdict() {
+  const el = document.getElementById("build-verdict");
+  panelText("build-computed", receivedHash || "not loaded yet");
+  if (!publishedHash || !receivedHash) {
+    el.dataset.state = "pending";
+    el.textContent = "The zip is hashed as the firmware loads it, so this fills in "
+                   + "while the firmware is starting.";
+    return;
+  }
+  const match = publishedHash === receivedHash;
+  el.dataset.state = match ? "match" : "differs";
+  el.textContent = match
+    ? "They match: the firmware zip this page loaded is the published build, byte for byte."
+    : "They differ: the firmware zip this page loaded is not the published build. "
+      + "Do not trust anything this page shows you.";
+}
+
+function fillPanel(info) {
+  const web = info.upstream.repo.replace(/\.git$/, "");
+  panelText("build-firmware", info.firmware + ", SeedSigner as its own project "
+                            + "publishes it, which is what a plain device runs");
+  panelLink("build-repo", web.replace(/^https:\/\//, ""), web);
+  panelLink("build-tag", info.upstream.tag,
+            web + "/releases/tag/" + encodeURIComponent(info.upstream.tag));
+  panelLink("build-commit", info.upstream.commit, web + "/commit/" + info.upstream.commit);
+  panelText("build-pyodide", info.pyodide);
+  panelText("build-zip", info.zip.name);
+  panelText("build-contents", info.zip.published_contents_sha256);
+  publishedHash = info.zip.published_sha256;
+  panelText("build-published", publishedHash);
+
+  const list = document.getElementById("build-deps");
+  for (const dep of info.dependencies) {
+    const item = document.createElement("li");
+    const name = document.createElement("b");
+    name.textContent = dep.name;
+    item.append(name, " " + dep.version);
+    list.appendChild(item);
+  }
+  showVerdict();
+}
+
+showVerdict();
+
+fetch("seedsigner-stock.build-info.json")
+  .then((response) => {
+    if (!response.ok) throw new Error(response.status + " " + response.statusText);
+    return response.json();
+  })
+  .then(fillPanel)
+  .catch((error) => {
+    panelText("build-firmware", `build-info.json is not being served, so this `
+                              + `panel cannot say what was built (${error.message})`);
+  });
+
+// Without cross-origin isolation there is no SharedArrayBuffer to make, and the
+// check at the bottom of this script says why rather than this line throwing.
+const ISOLATED = window.crossOriginIsolated && typeof SharedArrayBuffer !== "undefined";
+
+// [0] = has a key been posted, [1] = which key. The worker blocks on [0].
+const shared = ISOLATED ? new SharedArrayBuffer(8) : null;
+const keyBuffer = ISOLATED ? new Int32Array(shared) : null;
+
+// Frames and decoded QR payloads travel the same way, for the same reason: the
+// worker is blocked inside the firmware's main loop and cannot answer a message.
+const cameraBuffer = ISOLATED ? CameraChannel.createBuffer() : null;
+
+// An index into BUTTON_NAMES on the Python side.
+const KEYMAP = {
+  ArrowUp: 1, ArrowDown: 2, ArrowLeft: 3, ArrowRight: 4,
+  Enter: 5, " ": 5, "1": 6, "2": 7, "3": 8,
+};
+
+// The shell that is on the page right now, so a press can be shown on it.
+let shell = null;
+
+function sendKey(channel) {
+  if (shell && shell.press) shell.press(channel);
+  if (!keyBuffer) return;
+  Atomics.store(keyBuffer, 1, channel);
+  Atomics.store(keyBuffer, 0, 1);
+  Atomics.notify(keyBuffer, 0);
+}
+
+// Rebuilt only when the worker reports a screen the current art was not sized
+// for, because rebuilding detaches the canvas the firmware is painting into.
+let deviceScreen = "";
+function mountDevice(width, height) {
+  const size = width + "x" + height;
+  if (deviceScreen === size) return;
+  deviceScreen = size;
+  const device = SeedSignerDevice.render(deviceEl, {
+    screenWidth: width, screenHeight: height, interactive: true, onKey: sendKey,
+    maxWidth: "68rem",   // ~1.45x the native 320x240 in the cutout
+  });
+  device.screen.appendChild(canvas);
+  // The loading state rides on the screen, except once it has failed: the
+  // failure goes under the device, where there is room to read it.
+  if (statusEl && statusEl.className !== "err") device.screen.appendChild(bootEl);
+  shell = device;
+}
+
+function paint(bytes) {
+  // The byte count is authoritative about the frame's real size.
+  if (bytes.length !== W * H * 3) {
+    console.warn(`frame is ${bytes.length} bytes, expected ${W * H * 3}`);
+    return;
+  }
+  const frame = ctx.createImageData(W, H);
+  for (let src = 0, dst = 0; src < bytes.length; src += 3, dst += 4) {
+    frame.data[dst] = bytes[src];
+    frame.data[dst + 1] = bytes[src + 1];
+    frame.data[dst + 2] = bytes[src + 2];
+    frame.data[dst + 3] = 255;
+  }
+  ctx.putImageData(frame, 0, 0);
+}
+
+mountDevice(W, H);
+
+// Fullscreen: the device alone, laid along the viewport's longer side so its
+// keys are thumb sized on a phone. The same control, or Escape, comes back out.
+const fullscreenButton = document.getElementById("fullscreen");
+const fullscreenLabel = document.getElementById("fullscreen-label");
+
+function setSolo(on) {
+  document.body.classList.toggle("solo", on);
+  fullscreenButton.setAttribute("aria-pressed", String(on));
+  const corners = on
+    ? { "fs-tl": "M9.5 4v5.5H4", "fs-tr": "M14.5 4v5.5H20",
+        "fs-bl": "M9.5 20v-5.5H4", "fs-br": "M14.5 20v-5.5H20" }
+    : { "fs-tl": "M4 9.5V4h5.5", "fs-tr": "M20 9.5V4h-5.5",
+        "fs-bl": "M4 14.5V20h5.5", "fs-br": "M20 14.5V20h-5.5" };
+  for (const [id, d] of Object.entries(corners)) {
+    document.getElementById(id).setAttribute("d", d);
+  }
+  fullscreenLabel.textContent = on ? "Back to the page" : "Fill the screen";
+  fullscreenButton.title = fullscreenLabel.textContent;
+}
+fullscreenButton.title = fullscreenLabel.textContent;
+fullscreenButton.addEventListener("click", () => {
+  soloByTurn = false;
+  setSolo(!document.body.classList.contains("solo"));
+  // The firmware reads the keyboard off the document, so focus goes back to it.
+  fullscreenButton.blur();
+});
+// A phone turned on its side is asking for the device to fill the screen, and
+// turning it back undoes that, unless the button is what turned it on.
+const canTurn = matchMedia("(pointer: coarse)").matches
+             || navigator.maxTouchPoints > 0;
+if (canTurn) document.body.classList.add("touch");
+const sideways = matchMedia("(orientation: landscape) and (max-height: 30rem)");
+let soloByTurn = false;
+function followTheTurn(turned) {
+  if (!canTurn) return;
+  const solo = document.body.classList.contains("solo");
+  if (turned && !solo) { soloByTurn = true; setSolo(true); }
+  else if (!turned && solo && soloByTurn) { soloByTurn = false; setSolo(false); }
+}
+sideways.addEventListener("change", (event) => followTheTurn(event.matches));
+followTheTurn(sideways.matches);
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") setSolo(false);
+});
+
+function cameraSource() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    // getUserMedia is missing rather than merely refused when the page is not a
+    // secure context, which over plain http on a LAN address it is not.
+    throw new Error("no camera API here; needs https or localhost");
+  }
+  return navigator.mediaDevices.getUserMedia({
+    video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } },
+    audio: false,
+  });
+}
+
+// Constructing the worker is what starts the Pyodide download and the boot.
+function startSimulator() {
+  const worker = new Worker("worker.js");
+
+  worker.onmessage = (event) => {
+    const { type } = event.data;
+    if (type === "size") {
+      W = event.data.width; H = event.data.height;
+      canvas.width = W; canvas.height = H;
+      mountDevice(W, H);
+    } else if (type === "frame") {
+      paint(event.data.frame);
+      if (statusEl.className !== "ready") {
+        statusEl.textContent = "";
+        statusEl.className = "ready";
+      }
+    } else if (type === "log") {
+      console.log("[py] " + event.data.message);
+    } else if (type === "status") {
+      statusEl.textContent = event.data.message;
+    } else if (type === "ready") {
+      statusEl.textContent = "";
+      statusEl.className = "ready";
+    } else if (type === "zip-sha256") {
+      receivedHash = event.data.sha256;
+      showVerdict();
+    } else if (type === "network") {
+      // The firmware's own settings, read back out of them by the worker.
+      networkEl.textContent = event.data.name;
+      networkEl.title = "Bitcoin network: " + event.data.name;
+      document.body.classList.toggle("mainnet", event.data.mainnet);
+    } else if (type === "error") {
+      statusEl.textContent = "failed: " + event.data.message;
+      deviceBand.appendChild(statusEl);
+      statusEl.className = "err";
+    }
+  };
+
+  // The camera stays idle until the firmware asks for it, so nothing prompts for
+  // permission before somebody actually chooses to scan. No frames means the
+  // firmware never reaches its own button check, so the page says so.
+  CameraChannel.runPage(cameraBuffer, {
+    source: cameraSource,
+    onTrouble: (message) => { cameraHint.textContent = message; },
+  });
+
+  worker.postMessage({
+    type: "init", sharedBuffer: shared, cameraBuffer,
+    width: W, height: H, debug: DEBUG, bitcoinNetwork: BITCOIN_NETWORK,
+  });
+}
+
+if (!ISOLATED) {
+  // Three different faults, three different answers. A page that is not a
+  // secure context (plain http on anything but localhost) never gets shared
+  // memory whatever headers it sends; no SharedArrayBuffer on a secure page is
+  // the browser withholding it; having it and still not being isolated means
+  // the COOP/COEP headers did not arrive.
+  statusEl.textContent = !window.isSecureContext
+    ? "this page is not a secure context, so the browser will not give it the " +
+      "shared memory the simulator runs on, or a camera. Serve it over https, " +
+      "or open it as localhost."
+    : typeof SharedArrayBuffer === "undefined"
+    ? "this browser will not give the page shared memory, which is what the " +
+      "simulator runs on. Firefox, Chrome, Edge and Safari all will; some " +
+      "privacy browsers turn it off, and that setting is the thing to look for."
+    : "this page needs cross-origin isolation and is not getting it. If this is " +
+      "your own copy of the site, it has to send COOP and COEP on every response.";
+  statusEl.className = "err";
+} else {
+  document.addEventListener("keydown", (event) => {
+    const channel = KEYMAP[event.key];
+    if (channel === undefined) return;
+    event.preventDefault();
+    sendKey(channel);
+  });
+  startSimulator();
+}
 </script>
 </body>
 </html>

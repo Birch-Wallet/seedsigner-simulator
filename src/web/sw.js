@@ -6,7 +6,7 @@
  * visit after the first.
  *
  * Two rules, because the payload splits cleanly in two:
- *   - Pyodide, wallet.zip, fonts and icons are large and effectively immutable.
+ *   - Pyodide and fonts are large and effectively immutable.
  *     Cache-first, fetched once and kept until VERSION changes.
  *   - The pages and our own scripts change every deploy. Network-first, so a
  *     deploy is visible on the next load rather than whenever the cache expires.
@@ -18,73 +18,38 @@
  * channel that can reach it.
  */
 // Not bumped when the list below only grows, and that is deliberate. The cache
-// is named after VERSION and activate deletes every other one, so a bump throws
-// away the immutable half too -- twenty megabytes of Pyodide re-downloaded by
-// everybody who already had it, to pick up a few kilobytes of script. A changed
-// file here is enough to install this worker again, and install adds the new
-// entries to the cache that is already there. Bump it when something cached
-// must be thrown away, not when something new is added.
-// v8: the panel was rebuilt and phones were still being handed the old one out
-// of this cache. That is what a bump is for, and it costs a few kilobytes now
-// that activate carries the immutable half over instead of dropping it.
-const VERSION = "sim-v10";
+// is named after VERSION and activate deletes every other one, so a bump would
+// throw away the immutable half too if activate did not carry it across. A
+// changed file here is enough to install this worker again, and install adds
+// the new entries to the cache that is already there. Bump it when something
+// cached must be thrown away, not when something new is added.
+// v11: the page was stripped down to stock SeedSigner alone.
+const VERSION = "sim-v12";
 const CACHE = "seedsignersim-" + VERSION;
 
 // Small enough to fetch up front so a first-run offline load still works.
-//
-// The analytics pair is deliberately not here and never will be. /mt.js and
-// /mt.php live at the site root, outside this worker's scope, so nothing below
-// can reach them anyway -- which is the reason they were put there: a cached
-// tracker is a stale tracker, and a cached beacon is a visit that either never
-// happened or happened again days later.
 const SHELL = [
   "./",
   "./index.html",
-  "./wallet.html",
-  "./wallet-worker.js",
-  "./wallet-camera.js",
-  "./wallet-cards.js",
-  "./wallet-coordinator.js",
-  "./wallet-track.js",
+  "./worker.js",
+  "./camera.js",
   "./seedsigner-device.js",
-  "./doom-boot.js",
   "./jsQR.js",
-  // The four the page loads once somebody does more than look at the device:
-  // the coordinator beside it, the tutorial that drives it, and the two codecs
-  // both of those need to put a QR on the screen and read one back. They are
-  // fetched on use and so were cached on use, which is not the same thing --
-  // the rule below is network-first, so a script nobody had reached yet was a
-  // script that failed on the first bad connection. 127KB against a boot of
-  // twenty megabytes, and it makes the offline claim on the page true rather
-  // than nearly true.
-  "./signet-coordinator.js",
-  "./wallet-tutorial.js",
-  "./qr-encode.js",
-  "./ur-decode.js",
   "./browser_camera.py",
   "./browser_qr.py",
   "./browser_display.py",
   "./manifest.json",
-  "./icon-192-1ebb8267.png",
-  "./icon-512-2c740b57.png",
+  "./icon-192.png",
+  "./icon-512.png",
   "./apple-touch-icon.png",
 ];
 
-// Genuinely immutable things only. wallet.zip used to be listed here and is
-// not: it is rebuilt whenever the Python side changes, and cache-first with
-// no revalidation meant a returning visitor kept the old wallet forever while
-// getting fresh JS around it -- the worst version, mismatched halves.
-//
-// The WAD belongs here for the opposite reason to the one that kept it out of
-// the shell above: it is a published Freedoom release that never changes, and
-// network-first would re-download twenty-eight megabytes on every visit to a
-// page that is meant to be playable in a second. doom.wasm goes with it. The
-// glue in doom.js does not: it is built here and moves when the build does.
-// Only content-addressed paths. A name that carries a hash of what is in
-// it cannot go stale: change the bytes and the URL changes with them. The
-// apple-touch-icon is deliberately absent, because its path is a
-// convention Safari looks for and so cannot carry a hash.
-const IMMUTABLE = /\/(pyodide-[0-9a-f]{8}\/|doom-[0-9a-f]{8}\/|fonts\/|icon-\d+-[0-9a-f]{8}\.png|freedoom\d*-[0-9a-f]{8}\.wad)/;
+// Genuinely immutable things only: paths that carry a hash of what is in them,
+// so changing the bytes changes the URL. seedsigner-stock.zip is not one of them:
+// it is rebuilt whenever the Python side changes, and cache-first with no
+// revalidation would keep a returning visitor on the old firmware forever while
+// handing them fresh JS around it.
+const IMMUTABLE = /\/(pyodide-[0-9a-f]{8}\/|fonts\/)/;
 
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {

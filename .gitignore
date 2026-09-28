@@ -3,12 +3,10 @@
 # read does not belong in a repository whose point is that you can read it.
 /src/web/pyodide-e24b45d3/
 
-# Build artefacts. wallet.zip is what build/build-wallet-zip.sh produces; it is
+# Build artefacts. The firmware zip is what build/build-firmware-zip.sh produces; it is
 # not a source file, and committing it would invite people to trust the copy in
 # git instead of rebuilding and comparing, which is the whole idea.
 /build/out/
-wallet.zip
-wallet.zip.manifest
 
 # Python bytecode. Host-specific and timestamped, so it can never be part of a
 # reproducible artifact; the build script refuses to package any it finds.
@@ -26,31 +24,3 @@ __pycache__/
 .DS_Store
 *.swp
 *~
-
-# Built and fetched, never committed, for the same reason the wallet zips and
-# Pyodide are not: build/build-doom-wasm.sh produces the engine from a pinned
-# doomgeneric, and the WAD is 28 MB of Freedoom fetched from its own release.
-# What is served is provably built from the pins rather than pasted in.
-src/web/doom.js
-src/web/doom.wasm
-src/web/doom-run.js
-src/web/*.wad
-build/out/doom/
-
-# Anything holding a real seed. research/fund_mainnet.py reads one from
-# outside this tree.
-*.local.json
-
-# Local MuSig2 / DoomSigner dev harnesses. Never run by test/run.py, and each
-# one hardcodes this machine's scratch paths (_scratch, .cache/tmp, sibling
-# repos), so they only work here and leak-scan flagged the home directory in
-# them. Kept on disk for local use, not published.
-demo/core_interop.py
-test/test_camera_refused.py
-test/test_coordinator_flow.py
-test/test_coordinator_parity.py
-test/test_musig_browser.py
-test/test_musig_e2e.py
-test/test_musig_panel.py
-test/test_musig_wallet.py
-test/test_pool_conformance.py

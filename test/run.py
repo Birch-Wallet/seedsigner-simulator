@@ -10,9 +10,9 @@ tests against it, and stops the server whether they passed or not.
 Prerequisites, and nothing else:
   - Python 3.9+
   - pip install playwright && playwright install chromium
-  - build/fetch-assets.sh and build/build-wallet-zip.sh able to run once, which
+  - build/fetch-assets.sh and build/build-firmware-zip.sh able to run once, which
     needs network access. Their outputs are not committed: the Pyodide runtime is
-    26MB of someone else's release, and wallet.zip is built from a pinned
+    26MB of someone else's release, and the firmware zip is built from a pinned
     upstream SeedSigner commit so that what is tested is provably that commit.
 
 Order is deliberate. The checks that need nothing run first and finish in
@@ -20,12 +20,12 @@ seconds, so a broken checkout says so before anything spends two minutes booting
 CPython in WebAssembly.
 """
 
-import filecmp
 import os
 import socket
 import subprocess
 import sys
 import time
+import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -34,88 +34,32 @@ import harness
 PY = sys.executable
 
 # (name, argv relative to test/, does it need the server)
-#
-# The three scan tests run twice, once per firmware. Everything else runs once,
-# and deliberately: the card tests drive SeedKeeper and Satochip menus that stock
-# does not have, so running them against stock would not be a stricter check, it
-# would be a check of a menu tree that is not there. test_firmware.py and
-# test_build_info.py are the exceptions in the other direction: they visit both
-# firmwares themselves, by name, because both are about what the page says of
-# whichever one is running.
 SUITE = [
     ("leak_scan", ["leak_scan.py"], False),
-    ("cards", ["test_cards.py"], False),
-    ("tray_layout", ["test_tray_layout.py"], True),
     ("device", ["test_device.py"], True),
-    ("firmware", ["test_firmware.py"], True),
     ("build_info", ["test_build_info.py"], True),
     ("settings", ["test_settings.py"], True),
     ("scan_seedqr", ["test_scan.py"], True),
     ("scan_compact", ["test_scan.py"], True),
     ("scan_native", ["test_scan_native.py"], True),
     ("camera_stall", ["test_camera_stall.py"], True),
-    ("password", ["test_password.py"], True),
     ("passphrase", ["test_passphrase.py"], True),
-    ("stock_scan_seedqr", ["test_scan.py"], True),
-    ("stock_scan_compact", ["test_scan.py"], True),
-    ("stock_scan_native", ["test_scan_native.py"], True),
-    ("cards_browser", ["test_cards_browser.py"], True),
-    ("cards_seed", ["test_cards_seed.py"], True),
-    ("cards_seedkeeper", ["test_cards_seedkeeper.py"], True),
-    ("cards_descriptor", ["test_cards_seedkeeper_descriptor.py"], True),
-    ("cards_empty_seedkeeper", ["test_cards_empty_seedkeeper.py"], True),
-    ("stock_image_entropy", ["test_image_entropy.py"], True),
+    ("image_entropy", ["test_image_entropy.py"], True),
     ("mainnet", ["test_mainnet.py"], True),
-    ("tutorial", ["test_tutorial.py"], True),
-    ("tutorial_single", ["test_tutorial_single.py"], True),
 ]
 
-# test_tutorial_musig.py is not here either, and for a worse reason: it is
-# flaky, once. Measured 2026-09-20 on vps2: seventeen runs, sixteen passes and
-# one failure, where the firmware's own QR decoder raised "Segment total changed
-# unexpectedly" (decode_qr.py, in BaseAnimatedQrDecoder.add) the moment the
-# MuSig2 PSBT scan opened, dropping DoomSigner into UnhandledExceptionView. That
-# can only happen if frames from two rounds reach one scan, and the rounds carry
-# very different totals: p1of5 in the first, p1of19 in a later one.
-#
-# It has not been reproduced since. Sixteen attempts followed, twelve of them
-# with SIM_TRACE_QR=1 logging every painted frame and three running at once to
-# load the box, and every one passed. A stale frame left on the phone canvas was
-# the obvious suspect and is wrong: endTransfer calls summary(), which calls
-# clearPhone(). So it stays out of the suite rather than making CI red on
-# roughly one push in seventeen, and is run by hand:
-#
-#     python3 test/serve.py --port 8770 src/web src/shims build/out &
-#     SIM_TRACE_QR=1 python3 test/test_tutorial_musig.py
-#
-# What CI does pin about MuSig2 is that DoomSigner offers it in the picker,
-# which test_tutorial.py asserts.
-
-# test_tutorial_live.py is deliberately not here. It drives the whole multisig
-# tutorial against the real Bitsaga Signet, which means the network, a chain
-# that has to be up, and real waiting for real blocks. test_tutorial.py covers
-# everything about it that can be checked without any of that.
-
-# The same file scanned twice per firmware, once per QR encoding. Both must
-# reach the same seed, and the compact one is the encoding that breaks first if
-# any layer decides a payload is text.
-STOCK = {"SIM_FIRMWARE": "stock"}
+# The same file scanned twice, once per QR encoding. Both must end on the same
+# fingerprint; same_seed() below checks that they do.
 EXTRA_ENV = {
     "scan_seedqr": {"QR_KIND": "qr"},
     "scan_compact": {"QR_KIND": "qr-compact"},
-    "stock_scan_seedqr": {"QR_KIND": "qr", **STOCK},
-    "stock_scan_compact": {"QR_KIND": "qr-compact", **STOCK},
-    "stock_scan_native": dict(STOCK),
-    "stock_image_entropy": dict(STOCK),
-    "tutorial_single": dict(STOCK),
 }
 
 
 def ensure_assets() -> bool:
-    """Both wallet zips and the Pyodide runtime, built on demand."""
+    """The firmware zip and the Pyodide runtime, built on demand."""
     wanted = [
-        ("wallet-smartcard.zip", ["build/build-wallet-zip.sh", "smartcard"]),
-        ("wallet-stock.zip", ["build/build-wallet-zip.sh", "stock"]),
+        (harness.FIRMWARE_ZIP, ["build/build-firmware-zip.sh"]),
         (os.path.join("pyodide-e24b45d3", "pyodide.js"),
          ["build/fetch-assets.sh"]),
     ]
@@ -163,7 +107,7 @@ def start_server():
 
 
 # The three screens that must be the same screen. One seed, encoded three ways
-# and read down two different decoder paths, so if the wallet is honest all three
+# and read down two different decoder paths, so if the firmware is honest all three
 # runs end on the same rendered fingerprint. Comparing the images turns a claim
 # somebody had to check by eye into something CI can fail on.
 #
@@ -172,35 +116,73 @@ def start_server():
 # screenshots sitting next to it in the same directory. A screenshot of the page
 # also holds the title, the amber warning box, the tray labels and the hint line,
 # every one of them drawn with the fonts the machine happens to have and not one
-# of them anything wallet.zip can influence. Comparing those went red on innocent
+# of them anything the firmware zip can influence. Comparing those went red on innocent
 # hosts: once on a font difference across the whole header, once on five pixels
 # differing by one channel value at an antialiased corner of the warning box,
 # while the device area was byte-identical both times. A check that fails for
 # reasons nobody caused is one people learn to skim past, and that is how a real
 # regression eventually gets waved through.
 #
-# One baseline per firmware, which is forced rather than chosen: the two
-# firmwares draw SeedFinalizeScreen differently. Stock offers one passphrase
-# button where the fork offers three, so the two screens are not the same image
-# and never will be, and a single baseline could only be satisfied by one of
-# them. The seed behind both is the same seed, and the fingerprint printed on
-# both is b2269592.
-BASELINE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "baseline")
-BASELINES = {
-    "smartcard": os.path.join(BASELINE_DIR, "screen-b2269592.png"),
-    "stock": os.path.join(BASELINE_DIR, "stock-screen-b2269592.png"),
-}
+BASELINE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "baseline", "screen-b2269592.png")
 
 SAME_SEED_SCREENS = ("scan-screen-qr.png", "scan-screen-qr-compact.png",
                      "scan-screen-native-compact.png")
 
 
-def same_seed(firmware="smartcard") -> int:
-    label = "same_seed" if firmware == "smartcard" else f"{firmware}_same_seed"
-    print(f"\n=== {label} " + "=" * (63 - len(label)), flush=True)
-    prefix = "" if firmware == "smartcard" else f"{firmware}-"
-    names = tuple(prefix + n for n in SAME_SEED_SCREENS)
-    BASELINE = BASELINES[firmware]
+def png_pixels(path):
+    """The decoded pixels of an 8-bit, non-interlaced PNG, as bytes.
+
+    Pixels rather than file bytes, because what is being compared is what the
+    firmware drew, and two browsers can encode the same canvas into different PNG
+    files: a newer Chromium compresses differently and every byte moves while
+    not one pixel does. Standard library only, like the rest of this runner.
+    """
+    with open(path, "rb") as handle:
+        data = handle.read()
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError(f"{path} is not a PNG")
+    pos, idat = 8, b""
+    width = height = channels = 0
+    while pos < len(data):
+        length = int.from_bytes(data[pos:pos + 4], "big")
+        kind, body = data[pos + 4:pos + 8], data[pos + 8:pos + 8 + length]
+        if kind == b"IHDR":
+            width, height = int.from_bytes(body[0:4], "big"), int.from_bytes(body[4:8], "big")
+            depth, colour, interlace = body[8], body[9], body[12]
+            channels = {0: 1, 2: 3, 4: 2, 6: 4}.get(colour)
+            if depth != 8 or channels is None or interlace:
+                raise ValueError(f"{path}: only 8-bit non-interlaced PNGs are handled")
+        elif kind == b"IDAT":
+            idat += body
+        pos += 12 + length
+    raw, stride = zlib.decompress(idat), width * channels
+    out, previous = bytearray(), bytearray(stride)
+    for row in range(height):
+        start = row * (stride + 1)
+        kind, line = raw[start], bytearray(raw[start + 1:start + 1 + stride])
+        for i in range(stride):
+            left = line[i - channels] if i >= channels else 0
+            up, corner = previous[i], previous[i - channels] if i >= channels else 0
+            if kind == 1:
+                line[i] = (line[i] + left) & 0xFF
+            elif kind == 2:
+                line[i] = (line[i] + up) & 0xFF
+            elif kind == 3:
+                line[i] = (line[i] + (left + up) // 2) & 0xFF
+            elif kind == 4:
+                guess = left + up - corner
+                pa, pb, pc = abs(guess - left), abs(guess - up), abs(guess - corner)
+                pick = left if pa <= pb and pa <= pc else (up if pb <= pc else corner)
+                line[i] = (line[i] + pick) & 0xFF
+        out += line
+        previous = line
+    return (width, height, channels, bytes(out))
+
+
+def same_seed() -> int:
+    print("\n=== same_seed " + "=" * 54, flush=True)
+    names = SAME_SEED_SCREENS
 
     paths = [os.path.join(harness.ARTIFACT_DIR, n) for n in names]
     missing = [n for n, p in zip(names, paths) if not os.path.exists(p)]
@@ -208,20 +190,20 @@ def same_seed(firmware="smartcard") -> int:
         print(f"  FAIL no captured screen from {missing}")
         return 1
     for other in paths[1:]:
-        if not filecmp.cmp(paths[0], other, shallow=False):
+        if png_pixels(paths[0]) != png_pixels(other):
             print(f"  FAIL {os.path.basename(other)} is a different screen from "
                   f"{os.path.basename(paths[0])}; the scan-proof-*.png "
                   "screenshots beside them show what each run was displaying")
             return 1
 
-    # Agreeing with each other is not enough. Three runs of a wallet that derived
+    # Agreeing with each other is not enough. Three runs of firmware that derived
     # the seed wrongly would agree perfectly and still be wrong, and the mnemonic
     # to seed path here runs on a substituted PBKDF2 (hashlib has no OpenSSL under
     # Pyodide), so "all three match" has to be anchored to a known answer.
     #
     # That anchor is BASELINE, and moving the comparison to the canvas does not
     # weaken it: the baseline is the same capture of the same screen, taken from
-    # a run whose decoded seed was checked, and it is 320x240 of the wallet's own
+    # a run whose decoded seed was checked, and it is 320x240 of the firmware's own
     # output with nothing of the host in it. It is a picture rather than a digest
     # so that the anchor can be audited by opening it: it is SeedFinalizeScreen
     # reading "fingerprint b2269592", which is the BIP39 test vector "army van
@@ -230,9 +212,9 @@ def same_seed(firmware="smartcard") -> int:
     if not os.path.exists(BASELINE):
         print(f"  FAIL no baseline at {BASELINE}")
         return 1
-    if not filecmp.cmp(paths[0], BASELINE, shallow=False):
+    if png_pixels(paths[0]) != png_pixels(BASELINE):
         print("  FAIL the decoded seed does not match the known-good baseline "
-              f"({os.path.basename(BASELINE)}); the wallet decoded or derived "
+              f"({os.path.basename(BASELINE)}); the firmware decoded or derived "
               "something other than the test vector")
         return 1
     print("  ok   all three encodings end on the same screen, and it is the "
@@ -281,18 +263,16 @@ def main(argv) -> int:
         # The videos are ~115MB and regenerate in seconds; the screenshots are
         # the part worth keeping. SIM_KEEP_VIDEOS=1 to leave them behind.
         if not os.environ.get("SIM_KEEP_VIDEOS"):
-            for name in ("qr.y4m", "qr-compact.y4m", "qr-blank.y4m", "descriptor.y4m",
+            for name in ("qr.y4m", "qr-compact.y4m", "qr-blank.y4m",
                          "mainnet-camera.y4m"):
                 path = os.path.join(harness.ARTIFACT_DIR, name)
                 if os.path.exists(path):
                     os.remove(path)
 
-    # Only meaningful when every scan test for that firmware ran and passed:
-    # comparing a fresh capture against a stale one would prove nothing.
-    for firmware, prefix in (("smartcard", ""), ("stock", "stock_")):
-        scans = [prefix + n for n in ("scan_seedqr", "scan_compact", "scan_native")]
-        if all(results.get(name) == 0 for name in scans):
-            results[f"{prefix}same_seed"] = same_seed(firmware)
+    # Only meaningful when every scan test ran and passed: comparing a fresh
+    # capture against a stale one would prove nothing.
+    if all(results.get(name) == 0 for name in ("scan_seedqr", "scan_compact", "scan_native")):
+        results["same_seed"] = same_seed()
 
     print("\n" + "=" * 68)
     for name, code in results.items():

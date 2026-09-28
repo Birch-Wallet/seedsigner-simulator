@@ -1,11 +1,11 @@
 """
-Drive the wallet through a scan with Chromium's fake camera.
+Drive the firmware through a scan with Chromium's fake camera.
 
 getUserMedia needs a secure context, so this talks to loopback rather than the
 machine's LAN address, and it feeds a file instead of a device so the run is
 deterministic and needs no hardware.
 
-The wallet already logs every screen it displays, so that log is the oracle:
+The firmware already logs every screen it displays, so that log is the oracle:
 reaching SeedFinalizeScreen means the QR was decoded, parsed as a SeedQR and
 turned into a seed. The screenshot is taken there.
 
@@ -27,14 +27,13 @@ from playwright.sync_api import sync_playwright
 # raw-bytes CompactSeedQR. Both encode the same seed, so both must land on the
 # same fingerprint.
 KIND = os.environ.get("QR_KIND", "qr")
-# The videos are the same for both firmwares: one file, one seed, held up to
-# whichever wallet is running.
+# One file, one seed, held up to the firmware's camera.
 Y4M = harness.artifact(f"{KIND}.y4m")
-SHOT = harness.firmware_artifact(f"scan-proof-{KIND}.png")
-PREVIEW_SHOT = harness.firmware_artifact(f"scan-preview-{KIND}.png")
+SHOT = harness.artifact(f"scan-proof-{KIND}.png")
+PREVIEW_SHOT = harness.artifact(f"scan-preview-{KIND}.png")
 # The device's screen on its own, which is what run.py's same_seed step compares
 # across the three scans. The screenshot beside it is for looking at.
-SCREEN = harness.firmware_artifact(f"scan-screen-{KIND}.png")
+SCREEN = harness.artifact(f"scan-screen-{KIND}.png")
 
 
 def main() -> int:
@@ -55,10 +54,10 @@ def main() -> int:
         page = context.new_page()
         log = Log(page)
 
-        page.goto(harness.wallet_url())
+        page.goto(harness.sim_url())
 
-        log.wait(r"display\(\) enter: MainMenuScreen", 240, "the wallet to boot")
-        check("the wallet boots to the main menu", True)
+        log.wait(r"display\(\) enter: MainMenuScreen", 240, "the firmware to boot")
+        check("the firmware boots to the main menu", True)
 
         # Scan is the first button on the home screen and starts selected.
         page.keyboard.press("Enter")

@@ -3,7 +3,7 @@ The technical details panel, and the one check the page makes about itself.
 
 The panel exists so that a visitor can see what is running without being asked
 to take anybody's word for it: the firmware, the pin it was built from, the
-published hashes, and the sha256 of the wallet zip the worker actually received.
+published hashes, and the sha256 of the firmware zip the worker actually received.
 That last one is the only line with any weight in it, so most of this file is
 about it.
 
@@ -18,7 +18,7 @@ Then the part that makes the check a check: a deliberately altered zip is served
 from a second server, and the panel has to say so. A self-check that cannot go
 red is decoration.
 
-Nothing here needs the wallet to finish booting, but the hash does not arrive
+Nothing here needs the firmware to finish booting, but the hash does not arrive
 until the worker has loaded Pyodide and fetched the zip, so this is minutes
 rather than seconds.
 """
@@ -40,9 +40,8 @@ from harness import check, report
 
 from playwright.sync_api import sync_playwright
 
-# Both are visited by name rather than by SIM_FIRMWARE: the panel describes
-# whichever firmware is running, so it is only proved by running both.
-FIRMWARES = ("smartcard", "stock")
+# The [stock] section of UPSTREAM, and the name the build gives the zip.
+FIRMWARE = "stock"
 
 # The zip has to arrive and be hashed, which happens after Pyodide and its
 # binary packages have loaded. That is the whole cost of this file.
@@ -52,9 +51,8 @@ HASH_TIMEOUT = 180_000
 def upstream_field(firmware, key):
     """One published value, straight out of UPSTREAM.
 
-    Section-aware for the same reason every other reader of that file is: it
-    describes two firmwares, and a parser that ignored the headers would hand
-    back the other one's hash.
+    Section-aware for the same reason every other reader of that file is: a key
+    is only ever read from the section it belongs to.
     """
     section = None
     with open(os.path.join(harness.REPO, "UPSTREAM"), encoding="utf-8") as handle:
@@ -128,7 +126,7 @@ def text(page, selector):
 
 def describes(page, firmware):
     """The panel's account of a build, checked against UPSTREAM and the zip."""
-    published = upstream_field(firmware, "wallet_zip_sha256")
+    published = upstream_field(firmware, "zip_sha256")
 
     check(f"[{firmware}] the panel says which firmware is running",
           firmware in text(page, "#build-firmware"), text(page, "#build-firmware"))
@@ -147,12 +145,12 @@ def describes(page, firmware):
           text(page, "#build-published") == published, text(page, "#build-published"))
     check(f"[{firmware}] and the published contents sha256",
           text(page, "#build-contents")
-          == upstream_field(firmware, "wallet_zip_contents_sha256"),
+          == upstream_field(firmware, "zip_contents_sha256"),
           text(page, "#build-contents"))
     check(f"[{firmware}] and the Pyodide the repo pins",
           text(page, "#build-pyodide") == pinned_pyodide(), text(page, "#build-pyodide"))
 
-    zip_path = harness.find_asset(f"wallet-{firmware}.zip")
+    zip_path = harness.find_asset(f"seedsigner-{firmware}.zip")
     if zip_path:
         check(f"[{firmware}] and every dependency the zip's own manifest lists",
               panel_dependencies(page) == zip_dependencies(zip_path),
@@ -198,14 +196,14 @@ def altered(page):
     one, so build/out is never touched: a test that corrupts a build output has
     to put it back, and one that fails halfway through does not.
     """
-    firmware = "smartcard"
-    original = harness.find_asset(f"wallet-{firmware}.zip")
+    firmware = FIRMWARE
+    original = harness.find_asset(f"seedsigner-{firmware}.zip")
     if not original:
-        check("a built wallet zip to alter", False, "no wallet-smartcard.zip")
+        check("a built firmware zip to alter", False, f"no seedsigner-{firmware}.zip")
         return
 
     root = tempfile.mkdtemp(prefix="sim-altered-")
-    fake = os.path.join(root, f"wallet-{firmware}.zip")
+    fake = os.path.join(root, f"seedsigner-{firmware}.zip")
     shutil.copyfile(original, fake)
     with open(fake, "ab") as handle:
         handle.write(b"\n")  # one byte, which is all it should take
@@ -213,7 +211,7 @@ def altered(page):
     server = serve(root, harness.PORT + 1)
     try:
         open_panel(page, f"http://127.0.0.1:{harness.PORT + 1}"
-                         f"/wallet.html?debug=1&firmware={firmware}")
+                         "/index.html?debug=1")
         state, computed = verdict(page)
         check("an altered zip is reported as altered", state == "differs", state)
         check("and the panel says so in words",
@@ -237,18 +235,18 @@ def main() -> int:
         errors = []
         page.on("pageerror", lambda e: errors.append(str(e)))
 
-        for firmware in FIRMWARES:
-            open_panel(page, harness.wallet_url(firmware=firmware))
-            describes(page, firmware)
+        firmware = FIRMWARE
+        open_panel(page, harness.sim_url())
+        describes(page, firmware)
 
-            state, computed = verdict(page)
-            check(f"[{firmware}] the zip the page received hashes to the published sha256",
-                  state == "match", state)
-            check(f"[{firmware}] and that hash is the hash of the built zip",
-                  computed == sha256_of(harness.find_asset(f"wallet-{firmware}.zip")),
-                  computed)
-            page.screenshot(path=harness.artifact(f"build-panel-{firmware}.png"),
-                            full_page=True)
+        state, computed = verdict(page)
+        check(f"[{firmware}] the zip the page received hashes to the published sha256",
+              state == "match", state)
+        check(f"[{firmware}] and that hash is the hash of the built zip",
+              computed == sha256_of(harness.find_asset(f"seedsigner-{firmware}.zip")),
+              computed)
+        page.screenshot(path=harness.artifact(f"build-panel-{firmware}.png"),
+                        full_page=True)
 
         altered(page)
 

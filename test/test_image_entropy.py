@@ -7,13 +7,7 @@ single-frame mode is what "new seed" uses to take one still, and it was not, so
 it fell through to the real `from picamera import PiCamera` and the flow died on
 `No module named 'picamera'` at camera.py line 63.
 
-It went unseen because the two firmwares differ here: nothing in the fork calls
-the single-frame API at all, and the fork was the firmware this page booted
-until stock became the default. So the flow was broken on stock for as long as
-it has been offered, and became the first thing a visitor could reach the moment
-the default moved.
-
-Stock only, for that reason. Driven to the picture and no further: what is being
+Driven to the picture and no further: what is being
 asserted is that the camera opens, takes a frame and hands back an image, which
 is the part that was raising.
 """
@@ -39,10 +33,6 @@ def press(page, key, gap=1000):
 
 
 def main() -> int:
-    if harness.FIRMWARE != "stock":
-        print("  skipped: the fork does not use the single-frame camera at all")
-        return 0
-
     with sync_playwright() as p:
         browser = p.chromium.launch(args=[
             "--use-fake-ui-for-media-stream",
@@ -53,8 +43,8 @@ def main() -> int:
         page = context.new_page()
         log = Log(page)
 
-        page.goto(harness.wallet_url())
-        log.wait(r"display\(\) enter: MainMenuScreen", 240, "the wallet to boot")
+        page.goto(harness.sim_url())
+        log.wait(r"display\(\) enter: MainMenuScreen", 240, "the firmware to boot")
 
         for key in TO_THE_CAMERA:
             press(page, key)

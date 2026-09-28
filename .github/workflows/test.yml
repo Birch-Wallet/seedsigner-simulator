@@ -1,17 +1,10 @@
 # Runs the browser suite on every push and pull request.
 #
-# The things this needs are not in the repo. The two wallet zips are built from
-# pinned upstream SeedSigner commits, and the Pyodide runtime is 26MB of someone
-# else's release; committing any of them would mean the tests could pass against
-# a stale copy of the thing they are meant to be testing. All are produced by
-# the scripts in build/ and cached by their pinned inputs.
-#
-# One job, not a matrix. The suite is one suite: test/run.py drives the three
-# scan tests against both firmwares and the card tests against the smartcard
-# fork only, off one server serving both zips, and its same_seed step compares
-# captures that only exist because the runs before it produced them. Splitting
-# that across two runners would mean building both zips twice and inventing a
-# way to carry screenshots between legs, to answer a question nobody asked.
+# The things this needs are not in the repo. The firmware zip is built from the
+# pinned upstream SeedSigner commit, and the Pyodide runtime is 26MB of someone
+# else's release; committing either would mean the tests could pass against a
+# stale copy of the thing they are meant to be testing. Both are produced by the
+# scripts in build/ and cached by their pinned inputs.
 name: test
 
 on:
@@ -50,15 +43,13 @@ jobs:
             src/web/pyodide-e24b45d3
           key: assets-${{ hashFiles('build/*.sh', 'build/checksums.txt', 'UPSTREAM', '.github/workflows/test.yml') }}
 
-      # fetch-assets.sh needs curl and python3; build-wallet-zip.sh also needs
+      # fetch-assets.sh needs curl and python3; build-firmware-zip.sh also needs
       # git. All three are on the runner image already.
-      - name: Build the three wallet zips and fetch the Pyodide runtime
+      - name: Build the firmware zip and fetch the Pyodide runtime
         if: steps.assets.outputs.cache-hit != 'true'
         run: |
           ./build/fetch-assets.sh
-          ./build/build-wallet-zip.sh smartcard
-          ./build/build-wallet-zip.sh stock
-          ./build/build-wallet-zip.sh doomsigner
+          ./build/build-firmware-zip.sh
 
       - name: Install Playwright
         run: |
@@ -69,7 +60,7 @@ jobs:
         run: python3 test/run.py
 
       # The screenshots are the readable half of a failure: they show what the
-      # wallet was displaying when a check went red.
+      # firmware was displaying when a check went red.
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
