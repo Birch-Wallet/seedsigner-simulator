@@ -423,6 +423,24 @@
         };
       },
 
+      // The newest published frame, if it is newer than `sinceSeq`, without
+      // waiting and without touching what frame() has seen. The live preview
+      // reads this way: on the device the preview and the decode loop both read
+      // the latest frame of the same stream, and neither takes it from the other.
+      peekFrame: function (sinceSeq) {
+        var seq = Atomics.load(hdr, FRAME_SEQ);
+        if (seq === sinceSeq) return null;
+        var width = Atomics.load(hdr, FRAME_W);
+        var height = Atomics.load(hdr, FRAME_H);
+        if (width <= 0 || height <= 0) return null;
+        return {
+          seq: seq,
+          w: width,
+          h: height,
+          bytes: new Uint8Array(sab, FRAME_OFFSET, width * height * 3).slice(),
+        };
+      },
+
       // Claims the pending payload, if any. Clearing the length is what lets the
       // page publish the next one.
       payload: function () {

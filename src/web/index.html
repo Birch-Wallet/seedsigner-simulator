@@ -187,18 +187,13 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: .92em; word-break: break-all;
   }
-  #build .deps {
-    display: flex; flex-wrap: wrap; gap: .15rem .9rem;
-    list-style: none; padding: 0; margin: .5rem 0 0;
-  }
-  #build .deps li { overflow-wrap: anywhere; }
-  #build .deps b { color: #d7dbe0; font-weight: 500; }
+  /* Only ever says something when the zip is not the published build. */
+  #build .verdict:empty { display: none; }
   #build .verdict {
     margin: .8rem 0 0; border: 1px solid #2a2f36; border-radius: 6px; padding: .45rem .7rem;
   }
   #build .verdict[data-state=match] { color: #f7931a; border-color: #f7931a; background: #16181c; }
   #build .verdict[data-state=differs] { color: #ef4444; border-color: #7f1d1d; background: #1b0f10; }
-  #build .limit, #build .links { margin: .6rem 0 0; color: #9aa3ae; }
   .offscreen {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
     overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
@@ -308,11 +303,6 @@
         have introduced a critical bug. Treat every key it shows as public and
         never enter a seed phrase you rely on.</p>
 
-        <p><strong>This is device firmware, not a re-creation of it.</strong> The
-        Python that runs on a SeedSigner runs here, under Pyodide (CPython
-        compiled to WebAssembly). Nothing in the firmware is patched, and the
-        release it is built from is rebuilt below.</p>
-
         <div id="build">
           <h3>What is running</h3>
           <p id="firmware-line">Running stock SeedSigner 0.8.7, the firmware a
@@ -335,39 +325,7 @@
             <dt>published contents</dt><dd class="hash" id="build-contents"></dd>
           </dl>
           <p class="verdict" id="build-verdict" data-state="pending"></p>
-          <p class="limit">The page is checking itself, so this is a convenience and
-          not proof: only rebuilding the zip and comparing the hash is a check that
-          does not depend on this page being honest.</p>
-
-          <h3>What is in it</h3>
-          <p>The upstream tree at the commit above, this repository's stand-ins for
-          the hardware a browser does not have, and these pinned dependencies.
-          Nothing else.</p>
-          <ul class="deps" id="build-deps"></ul>
-
-          <p class="links">Check it yourself:
-          <a href="https://github.com/newtonick/seedsigner-simulator/blob/main/build/build-firmware-zip.sh" rel="noopener">rebuild the zip</a> ·
-          <a href="https://github.com/newtonick/seedsigner-simulator/actions/workflows/reproducible-build.yml" rel="noopener">the same rebuild on a clean runner</a> ·
-          <a href="https://github.com/newtonick/seedsigner-simulator/actions/workflows/test.yml" rel="noopener">tests</a> ·
-          <a href="https://github.com/newtonick/seedsigner-simulator/actions/workflows/upstream-tests.yml" rel="noopener">upstream's own tests</a> ·
-          <a href="https://github.com/newtonick/seedsigner-simulator" rel="noopener">source</a></p>
         </div>
-
-        <p>Three things a browser cannot do, replaced from outside the firmware
-        and never inside it:</p>
-        <ul>
-          <li><strong>Display:</strong> the device's own driver renders the
-          frames; the page paints them at the panel's own size, 320&times;240 or
-          240&times;240, pixel for pixel.</li>
-          <li><strong>Buttons:</strong> the worker is blocked inside the firmware's
-          main loop, so keys cross on a SharedArrayBuffer.</li>
-          <li><strong>Camera:</strong> your webcam. pyzbar has no WebAssembly
-          build, so decoding happens in the browser and reaches the unmodified
-          decoder unchanged.</li>
-        </ul>
-
-        <p><strong>Driving it.</strong> Press the drawn buttons, or the
-        keyboard: arrows move, Enter selects, 1 to 3 are the side buttons.</p>
 
         <p><strong>Two devices.</strong> The switch under the device picks the
         hardware: the SeedSigner Plus with its 320&times;240 screen, or the
@@ -525,14 +483,15 @@ function showVerdict() {
   panelText("build-computed", receivedHash || "not loaded yet");
   if (!publishedHash || !receivedHash) {
     el.dataset.state = "pending";
-    el.textContent = "The zip is hashed as the firmware loads it, so this fills in "
-                   + "while the firmware is starting.";
+    el.textContent = "";
     return;
   }
+  // Silent when they match, which is the normal case; the two hashes above
+  // already say so. Loud when they do not.
   const match = publishedHash === receivedHash;
   el.dataset.state = match ? "match" : "differs";
   el.textContent = match
-    ? "They match: the firmware zip this page loaded is the published build, byte for byte."
+    ? ""
     : "They differ: the firmware zip this page loaded is not the published build. "
       + "Do not trust anything this page shows you.";
 }
@@ -550,15 +509,6 @@ function fillPanel(info) {
   panelText("build-contents", info.zip.published_contents_sha256);
   publishedHash = info.zip.published_sha256;
   panelText("build-published", publishedHash);
-
-  const list = document.getElementById("build-deps");
-  for (const dep of info.dependencies) {
-    const item = document.createElement("li");
-    const name = document.createElement("b");
-    name.textContent = dep.name;
-    item.append(name, " " + dep.version);
-    list.appendChild(item);
-  }
   showVerdict();
 }
 
@@ -582,6 +532,18 @@ const ISOLATED = window.crossOriginIsolated && typeof SharedArrayBuffer !== "und
 // [0] = has a key been posted, [1] = which key. The worker blocks on [0].
 const shared = ISOLATED ? new SharedArrayBuffer(8) : null;
 const keyBuffer = ISOLATED ? new Int32Array(shared) : null;
+
+// [signal, live, wait]: Pyodide's interrupt buffer, and the flag saying whether
+// to use it. While the firmware has an animation running, the page writes
+// SIGINT into slot 0 every 80ms and the worker's handler takes that moment
+// between two bytecodes to give the animations a turn.
+const tickBuffer = ISOLATED ? new Int32Array(new SharedArrayBuffer(12)) : null;
+const TICK_MS = 80;
+if (tickBuffer) {
+  setInterval(() => {
+    if (Atomics.load(tickBuffer, 1)) Atomics.store(tickBuffer, 0, 2);
+  }, TICK_MS);
+}
 
 // Frames and decoded QR payloads travel the same way, for the same reason: the
 // worker is blocked inside the firmware's main loop and cannot answer a message.
@@ -881,7 +843,7 @@ function startSimulator() {
   });
 
   worker.postMessage({
-    type: "init", sharedBuffer: shared, cameraBuffer,
+    type: "init", sharedBuffer: shared, cameraBuffer, tickBuffer: tickBuffer.buffer,
     width: W, height: H, debug: DEBUG, bitcoinNetwork: BITCOIN_NETWORK,
   });
 }

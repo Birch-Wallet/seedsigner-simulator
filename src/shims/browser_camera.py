@@ -20,16 +20,26 @@ Frames and payloads are deliberately not tied to each other. extract_qr_data()
 ignores the image it is handed and reports whatever the page decoded most
 recently, because the decode ran in JavaScript against the page's own copy of the
 frame. The image that arrives here matters only for the preview.
+
+The preview is SeedSigner's own LivePreviewThread, run as a green thread (see
+browser_threads.py). It reads the stream the way the device's preview does:
+the latest frame, whenever it gets a turn, without taking it from the decode
+loop that is reading the same stream.
 """
 
 from PIL import Image
 
+import browser_threads
+
 from seedsigner.hardware.camera import Camera, CameraConnectionError
 from seedsigner.models.decode_qr import DecodeQR
 
-# The bridge into the page, supplied by install(). Four calls: start(), stop(),
-# frame(timeout_ms) and payload().
+# The bridge into the page, supplied by install(). Five calls: start(), stop(),
+# frame(timeout_ms), peekFrame(since_seq) and payload().
 _js = None
+
+# The last frame the preview drew, so it only draws a frame once.
+_preview_seq = [0]
 
 # How long a frame read parks before giving up and letting the scan loop go round
 # again. Long enough not to spin, short enough that stopping the camera is not
@@ -83,15 +93,27 @@ def _start_video_stream_mode(self, resolution=(512, 384), framerate=12, format="
 
 def _read_video_stream(self, as_image=False):
     """
-    Return the most recent camera frame, parking until one arrives.
+    Return the most recent camera frame.
 
-    Blocking here is what paces SeedSigner's scan loop; without it the loop would
-    spin against a still image as fast as Python can run.
+    The decode loop, on the main stack, parks until a frame it has not seen
+    arrives: blocking here is what paces SeedSigner's scan loop, which would
+    otherwise spin against a still image as fast as Python can run. The live
+    preview, a green thread, must never park -- nothing else runs while it
+    does -- so it gets the newest frame it has not drawn yet, or None, which its
+    loop already expects.
     """
     if self._video_stream is None:
         raise Exception("Must call start_video_stream_mode first.")
 
-    frame = _js.frame(_FRAME_WAIT_MS)
+    if not browser_threads.on_main():
+        frame = _js.peekFrame(_preview_seq[0])
+        if frame is None:
+            return None
+        _preview_seq[0] = frame.seq
+    else:
+        # The preview's turn, before parking for the next frame.
+        browser_threads.step_due()
+        frame = _js.frame(_FRAME_WAIT_MS)
     if frame is None:
         return None
 
@@ -200,33 +222,6 @@ def _extract_qr_data(image, is_binary: bool = False):
     return None if payload is None else _to_bytes(payload)
 
 
-def _pump_preview(screen):
-    """
-    Draw one frame of ScanScreen's live preview.
-
-    The preview is normally a thread, and this port has no threads: the worker is
-    single-threaded, so the shim that stands in for threading.Thread drops
-    anything loop-shaped, and ScanScreen's LivePreviewThread is loop-shaped. That
-    would leave the scan screen frozen on whatever was drawn before it.
-
-    Rather than reimplement the preview -- it draws the progress bar for animated
-    QRs, the frame-accepted indicator and the translated instructions -- let
-    SeedSigner's own loop body run exactly one pass: keep_running answers True
-    once and then False, so run() draws a single frame and returns.
-    """
-    threads = getattr(screen, "threads", None)
-    if not threads:
-        return
-
-    preview = threads[0]
-    passes = [True, False]
-    type(preview).keep_running = property(lambda self: passes.pop(0) if passes else False)
-    try:
-        preview.run()
-    finally:
-        del type(preview).keep_running
-
-
 def install(js_camera):
     """
     Point SeedSigner's camera and QR decode at the page.
@@ -254,41 +249,3 @@ def install(js_camera):
     # the camera, because it probes for zbar and OpenCV and this build has neither.
     DecodeQR.is_qr_scanner_available = staticmethod(lambda: True)
 
-    _install_preview_pump()
-
-
-def _install_preview_pump():
-    from seedsigner.gui.screens.scan_screens import ScanScreen
-
-    original_run = ScanScreen._run
-
-    def _run(self):
-        # The decode loop is the only thing still running once scanning starts, so
-        # it is the only place left to drive the preview from. Camera reads are
-        # the loop's heartbeat: one frame read, one frame drawn.
-        camera = self.camera
-        original_read = camera.read_video_stream
-
-        # The guard is what makes this safe. The preview reads through the same
-        # read_video_stream the decode loop does, so without it the preview's
-        # own read would pump the preview from inside the preview, for as deep
-        # as the recursion limit allows.
-        drawing = {"active": False}
-
-        def read_and_draw(*args, **kwargs):
-            frame = original_read(*args, **kwargs)
-            if frame is not None and not drawing["active"]:
-                drawing["active"] = True
-                try:
-                    _pump_preview(self)
-                finally:
-                    drawing["active"] = False
-            return frame
-
-        camera.read_video_stream = read_and_draw
-        try:
-            return original_run(self)
-        finally:
-            del camera.read_video_stream
-
-    ScanScreen._run = _run

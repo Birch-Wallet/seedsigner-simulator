@@ -10,13 +10,14 @@ about it.
 Every value the panel shows is checked against something that is not the panel's
 own source. The tag, the commit and both hashes are read out of UPSTREAM here,
 not out of build-info.json, because build-info.json is what feeds the panel and
-comparing the two would only prove the page can echo a file back. The dependency
-list is compared against the licences manifest inside the built zip. And the
+comparing the two would only prove the page can echo a file back. And the
 received hash is compared against sha256 of the zip on disk.
 
 Then the part that makes the check a check: a deliberately altered zip is served
-from a second server, and the panel has to say so. A self-check that cannot go
-red is decoration.
+from a second server, and the panel has to say so. The panel says nothing when
+the hashes match -- they are side by side for anyone to compare -- but a zip
+that is not the published build has to go red. A self-check that cannot go red
+is decoration.
 
 Nothing here needs the firmware to finish booting, but the hash does not arrive
 until the worker has loaded Pyodide and fetched the zip, so this is minutes
@@ -32,7 +33,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import harness
@@ -74,40 +74,6 @@ def pinned_pyodide():
     return found.group(1)
 
 
-def zip_dependencies(zip_path):
-    """(name, version) for every third-party dependency the zip carries.
-
-    Read out of licenses/MANIFEST.txt, which the build writes into the zip as it
-    packs each one, so it is the zip's own account of what is in it rather than
-    a second description of the same table.
-    """
-    with zipfile.ZipFile(zip_path) as archive:
-        manifest = archive.read("licenses/MANIFEST.txt").decode()
-
-    pairs = set()
-    for line in manifest.splitlines():
-        # Three columns, padded, so two or more spaces is the separator.
-        columns = re.split(r"\s{2,}", line.strip())
-        if len(columns) != 3:
-            continue  # the prose at the top of the file
-        _module, distribution, release = columns
-        if distribution in ("DISTRIBUTION", "this repository"):
-            continue  # the header, and this repository's own stand-ins
-        if release.startswith("commit "):
-            continue  # upstream itself, which the panel names separately
-        pairs.add((distribution, release))
-    return pairs
-
-
-def panel_dependencies(page):
-    """(name, version) for every entry the panel lists."""
-    pairs = set()
-    for item in page.locator("#build-deps li").all():
-        name, _, version = item.inner_text().partition(" ")
-        pairs.add((name.strip(), version.strip()))
-    return pairs
-
-
 def open_panel(page, url):
     page.goto(url)
     # One panel now, behind the i: what the simulator is and what it was built
@@ -115,9 +81,9 @@ def open_panel(page, url):
     # half that let you check it.
     page.wait_for_selector("#about > summary")
     page.locator("#about > summary").click()
-    # Filled in from build-info.json, so waiting for the first dependency is
-    # waiting for that fetch rather than for a fixed number of milliseconds.
-    page.wait_for_selector("#build-deps li")
+    # Filled in from build-info.json, so waiting for the tag is waiting for that
+    # fetch rather than for a fixed number of milliseconds.
+    page.wait_for_function("document.getElementById('build-tag').textContent.trim() !== ''")
 
 
 def text(page, selector):
@@ -150,20 +116,11 @@ def describes(page, firmware):
     check(f"[{firmware}] and the Pyodide the repo pins",
           text(page, "#build-pyodide") == pinned_pyodide(), text(page, "#build-pyodide"))
 
-    zip_path = harness.find_asset(f"seedsigner-{firmware}.zip")
-    if zip_path:
-        check(f"[{firmware}] and every dependency the zip's own manifest lists",
-              panel_dependencies(page) == zip_dependencies(zip_path),
-              str(panel_dependencies(page) ^ zip_dependencies(zip_path)))
-
-    # The limitation is the point of the panel as much as the hashes are, so it
-    # is asserted rather than left to survive on good intentions.
-    check(f"[{firmware}] and does not claim the self-check is proof",
-          "not proof" in text(page, "#build .limit"), text(page, "#build .limit"))
-
 
 def verdict(page, timeout=HASH_TIMEOUT):
-    page.wait_for_selector("#build-verdict:not([data-state=pending])", timeout=timeout)
+    # Attached, not visible: the verdict is empty and hidden when the hashes match.
+    page.wait_for_selector("#build-verdict:not([data-state=pending])", timeout=timeout,
+                           state="attached")
     return (page.locator("#build-verdict").get_attribute("data-state"),
             text(page, "#build-computed"))
 
@@ -242,6 +199,8 @@ def main() -> int:
         state, computed = verdict(page)
         check(f"[{firmware}] the zip the page received hashes to the published sha256",
               state == "match", state)
+        check(f"[{firmware}] and the panel adds nothing to say so",
+              text(page, "#build-verdict") == "", text(page, "#build-verdict"))
         check(f"[{firmware}] and that hash is the hash of the built zip",
               computed == sha256_of(harness.find_asset(f"seedsigner-{firmware}.zip")),
               computed)

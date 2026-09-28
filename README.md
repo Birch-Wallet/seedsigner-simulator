@@ -82,10 +82,12 @@ needs editing too.
 
 - **It is the firmware, not a re-creation.** `seedsigner-stock.zip` holds SeedSigner's
   upstream Python tree and its own `Controller.start()` runs it. Menus, seed
-  handling, PSBT parsing, QR encoders: all theirs, unmodified.
-- **Nothing patches the firmware.** Hardware is replaced from outside, by
-  [`src/shims/`](src/shims). Even Testnet-at-boot is a value in the
-  `settings.json` the device reads, not an edit.
+  handling, PSBT parsing, QR encoders: all theirs.
+- **SeedSigner's own files are unmodified.** Everything this port changes happens
+  at runtime, in [`worker.js`](src/web/worker.js), [`src/shims/`](src/shims) and
+  [`src/fakes/`](src/fakes). That code runs with full access to the firmware and
+  to any seed you enter. Testnet-at-boot is a value in the `settings.json` the
+  device reads, not a code change.
 - **Pinned to a release tag, not a branch tip** ([`UPSTREAM`](UPSTREAM)).
 - **Rebuild and compare.** `build/build-firmware-zip.sh` reproduces the zip byte for
   byte, and CI re-derives the hashes on every push on a clean runner.
@@ -106,9 +108,13 @@ firmware drives: the SeedSigner Plus at 320×240, or the original Waveshare hat 
 whole device, composed from the firmware's frames in the browser, so the pointer
 is never in it.
 
+The firmware's own animation threads run too: the spinner, pulsing warning
+edges, scrolling labels, the PSBT overview's animation, animated QRs and the
+camera preview, each taking turns with the firmware on a single thread.
+
 **Does not.** No microSD, so settings reset on reload and firmware update is gone.
-Nothing on a background thread: no spinner, no scrolling text, no pulsing border
-(camera preview and animated QR are pumped by hand). No timing, so no wipe timer,
+No toasts. The spinner holds still through a single long computation, such as
+the PBKDF2 that turns a mnemonic into a seed, then carries on. No timing, so no wipe timer,
 screensaver or battery reading.
 
 ## How it works
@@ -122,8 +128,10 @@ WebAssembly) in a Web Worker. Three hardware seams are replaced.
 | Buttons | [`worker.js`](src/web/worker.js) | The worker is blocked in the firmware's main loop and can never answer a `postMessage`, so keys cross on a `SharedArrayBuffer`. |
 | Camera + QR | [`browser_camera.py`](src/shims/browser_camera.py) + [`camera.js`](src/web/camera.js) | pyzbar has no WebAssembly build, so the browser decodes and hands bytes to the unmodified decoder. |
 
-A fourth, [`browser_qr.py`](src/shims/browser_qr.py), draws the QR screens, whose
-drawing lives in a thread this environment cannot run.
+A fourth, [`browser_threads.py`](src/shims/browser_threads.py), runs SeedSigner's
+animation threads, which this single-threaded environment cannot run as threads:
+each one's `run()` is rewritten in memory into a generator that pauses where the
+thread already sleeps, and they take turns with the firmware.
 
 That one constraint, a permanently blocked worker, explains most of the
 architecture. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) is the long version,
@@ -150,11 +158,12 @@ every screen, thread and keypress to the console.
 
 Two rules keep the "it is the real firmware" claim true:
 
-- **Do not patch the firmware.** `seedsigner-stock.zip` is the upstream tree at the
-  pinned commit. If SeedSigner reaches for something a browser does not have,
-  replace it from the outside, in a shim under `src/shims/` or the worker, with a
-  comment saying what it stands in for. To move to a newer SeedSigner, change
-  `UPSTREAM` and rebuild.
+- **Do not edit the firmware's files.** `seedsigner-stock.zip` is the upstream tree
+  at the pinned commit. If SeedSigner reaches for something a browser does not
+  have, replace it at runtime, in a shim under `src/shims/` or the worker, with a
+  comment saying what it stands in for. That is still code with full access to the
+  firmware, so keep it small and easy to read: it is what a reviewer has to read.
+  To move to a newer SeedSigner, change `UPSTREAM` and rebuild.
 - **Keep the manifest in step.** `build/checksums.txt` hashes every file that is
   served or packaged as it stands. Change one and run `./build/update-checksums.sh`,
   then commit the manifest with it. `git config core.hooksPath build/hooks`

@@ -3,8 +3,10 @@
 How real SeedSigner device firmware ends up running in a browser tab, and why the
 code looks the way it does. The firmware is stock SeedSigner 0.8.7.
 
-The short version: the firmware's own Python runs unmodified under Pyodide in a Web
-Worker, and three hardware seams are replaced from the outside. One constraint (the
+The short version: the firmware's own Python runs under Pyodide in a Web Worker,
+its files unmodified, and three hardware seams are replaced at runtime from outside
+those files. That runtime code has full access to the firmware and to any seed you
+enter. One constraint (the
 worker is permanently blocked inside the firmware's main loop and can never answer a
 message) explains most of the rest.
 
@@ -15,7 +17,7 @@ message) explains most of the rest.
 - [Seam 1: the display](#seam-1-the-display)
 - [Seam 2: the buttons](#seam-2-the-buttons)
 - [Seam 3: the camera and the QR decode](#seam-3-the-camera-and-the-qr-decode)
-- [The fourth module: screens that show a QR](#the-fourth-module-screens-that-show-a-qr)
+- [Threads, taking turns](#threads-taking-turns)
 - [The rest of the environment](#the-rest-of-the-environment)
 - [Boot, in order](#boot-in-order)
 - [Where the seams are not](#where-the-seams-are-not)
@@ -32,10 +34,12 @@ message) explains most of the rest.
                                          │       │  └─ vendored deps
                                          └───────┴─ browser_display.py
                                                     browser_camera.py
-                                                    browser_qr.py
+                                                    browser_threads.py
 ```
 
-Two buffers cross the boundary, one per input: keys and camera. Output,
+Two buffers cross the boundary, one per input: keys and camera. A third, small
+one carries the tick that gives the firmware's animations their turns (see
+[Threads, taking turns](#threads-taking-turns)). Output,
 the display frames, goes the other way as ordinary `postMessage`, because that
 direction still works (see below).
 
@@ -124,8 +128,8 @@ one press and no repeat, exactly as a hardware button does.
 
 An 8-byte `SharedArrayBuffer` viewed as `Int32Array`: slot 0 is "a key is
 waiting", slot 1 is which one. The page stores the keycode, stores 1, notifies.
-The worker's `js_wait_for_key` parks on `Atomics.wait(keyBuffer, 0, 0)`, reads the
-code, clears the flag.
+The worker parks on `Atomics.wait(keyBuffer, 0, 0)`, with a timeout whenever an
+animation is due its next turn, then reads the code and clears the flag.
 
 On the Python side that becomes `HardwareButtons.wait_for`, which is what the whole
 firmware calls to read a button. The buffer carries an index into `BUTTON_NAMES`
@@ -225,48 +229,73 @@ fails if the firmware reports any seed at all.
 
 ### The preview
 
-`ScanScreen` draws its live preview from a thread, and this environment has no
-threads (see below), so the preview would be frozen on whatever was drawn before
-it. Rather than reimplement it (it draws the progress bar for animated QRs, the
-frame-accepted indicator and the translated instructions), the shim lets
-SeedSigner's own loop body run exactly one pass per camera read: `keep_running`
-answers `True` once, then `False`, so `run()` draws a single frame and returns.
-One frame read, one frame drawn.
+`ScanScreen` draws its live preview from its own `LivePreviewThread`, which runs
+here as a green thread (see [Threads, taking turns](#threads-taking-turns)). It
+reads the stream the way the device's preview does: the latest frame, whenever
+it gets a turn, without taking it from the decode loop reading the same stream.
+The decode loop, on the main stack, parks for each new frame with `frame()`; the
+preview reads with `peekFrame()`, which never waits and never moves the decode
+loop's place. The progress bar for animated QRs, the frame-accepted indicator and
+the translated instructions are all upstream's drawing.
 
-## The fourth module: screens that show a QR
+## Threads, taking turns
 
-[`src/shims/browser_qr.py`](../src/shims/browser_qr.py)
+[`src/shims/browser_threads.py`](../src/shims/browser_threads.py)
 
-Not a hardware seam, but the same problem in a different place.
-`QRDisplayScreen` puts every pixel of its output inside a thread and its `_run()`
-does nothing but wait for a button. With no threads, every QR the firmware wants to
-*show* comes out blank: exported xpubs, signed PSBTs, SeedQR backups, addresses.
-The flow appears to work and hands back an empty screen.
+SeedSigner draws everything that moves from a background thread: the spinner
+while a PSBT parses or an xpub is derived, the pulsing edge of a warning, a label
+too long for its button scrolling along, the PSBT overview's animation, every QR
+it shows, the camera preview. Pyodide is one thread, and it has neither
+`greenlet` nor stack switching that works in every browser.
 
-The same trick as the camera preview applies: run SeedSigner's own loop body one
-pass at a time. Its last statement is a sleep sized to hold each frame for a sixth
-of a second, so one pass is exactly one animation frame at the intended rate, and
-animated QRs advance on their own without a timer. The pump hangs off `wait_for`
-rather than `_run`, because waiting for a button is all `_run` does, so the
-brightness adjustment, the tip toast, the encoder's frame sequence and the exit
-conditions all stay upstream's.
+What makes it possible anyway is that every one of those threads gives way at
+points written directly in its own `run()`: a `time.sleep`, the end of a pass of
+its `while self.keep_running` loop, a `with renderer.lock`. So when one starts,
+its `run()` is read with `inspect`, rewritten with `ast` so that exactly those
+points become `yield`s, and compiled into a generator, in memory, against the
+original's globals and closure. The files under `seedsigner/` are left as they
+are; what changes is what runs, as with every other seam here. Line numbers are kept, so a
+traceback still points at the firmware's own line. If a `run()` cannot be
+rewritten, the thread is dropped, which is what this port always did.
+
+A scheduler then takes turns between those generators and the firmware's main
+stack. The main stack gives the threads their turns wherever it would have
+blocked on a device: waiting for a key in `wait_for`, sleeping, waiting on a lock,
+polling in the scan loop. Locks are the scheduler's own: a green thread waits for
+one by pausing, and the main stack waits for one by giving the threads turns
+until the holder lets go.
+
+Waiting is not enough on its own, because the spinner is always started just
+before heavy work on the main stack: parsing a PSBT, deriving a key. So while an
+animation is running the page writes SIGINT into Pyodide's interrupt buffer
+every 80ms, CPython notices it between two bytecodes, and a signal handler takes
+that moment to step whatever is due. Nothing ticks when no animation is running.
+The one thing it cannot interrupt is a single long C call, such as PBKDF2 inside
+pycryptodome; the spinner holds still for that call and then carries on.
+
+Which threads run this way is a list in the shim: the spinner, address
+verification's progress, the warning edge, scrolling text, the PSBT overview,
+`QRDisplayThread` and `LivePreviewThread`. Toasts and the microSD watcher are
+still dropped. `BackgroundImportThread` and the address search still run inline
+on `start()`, as they always have.
+
+One consequence for input: a screen showing a code ignores presses for a moment
+after it opens, and the queue is emptied as it opens. The press that opened it,
+or one just behind it, is still arriving then, and it would otherwise dismiss the
+code after a single frame.
 
 ## The rest of the environment
 
 The boot shim in `worker.js` also patches over the ways Pyodide is not a
 Raspberry Pi. These are small, but each one is a hard failure without it:
 
-- **No threads.** `threading.Thread` is replaced. SeedSigner's own `BaseThread`
-  subclasses loop on `keep_running` to animate something; running one synchronously
-  would never return, so they are dropped. Everything else is a one-shot helper
-  whose work the caller may be waiting on, so those run inline on `start()`.
-  `BackgroundImportThread` is the named exception: the controller blocks waiting
-  for it to set up storage, and without it the firmware hangs forever after the
-  splash.
-- **So no locks worth the name.** Work run inline runs inside whatever lock its
-  starter held, and one thread taking a plain `Lock` twice waits for itself
-  forever. There is one thread here, so the only acquire that can block is a
-  thread blocking on itself; `threading.Lock` is therefore the reentrant one.
+- **No real threads.** `threading.Thread`, `Lock` and `RLock` are replaced by
+  `browser_threads.py` (see [Threads, taking turns](#threads-taking-turns)).
+  One-shot helpers whose work the caller may be waiting on run inline on
+  `start()`; `BackgroundImportThread` is the named case, because the controller
+  blocks waiting for it to set up storage and without it the firmware hangs
+  forever after the splash. Locks are reentrant for their owner, because work run
+  inline runs inside whatever lock its starter held.
 - **Testnet, not mainnet.** Settings comes up on whatever `settings.json` holds,
   so the boot shim writes `network: T` there next to the display config, before
   the firmware reads it. Configuration rather than a patch: it is the file a
@@ -295,15 +324,14 @@ the flag, `js_log` builds nothing and posts nothing.
 
 1. `index.html` checks `crossOriginIsolated`. If the headers are missing, or the
    page is not a secure context, it stops here and says so.
-2. It allocates the two shared buffers, mounts the device art, starts the worker and posts one `init` message, the only message the worker
+2. It allocates the three shared buffers, mounts the device art, starts the worker and posts one `init` message, the only message the worker
    will ever receive, because after this it is inside Python.
 3. The worker loads Pyodide, then the two binary packages it needs: Pillow and
    pycryptodome.
 4. It fetches `seedsigner-stock.zip` and unpacks it to `/firmware`, then fetches the three `browser_*.py` shims and writes them
    alongside.
-5. It runs the boot shim: settings (display config and network), threads,
-   `pbkdf2_hmac`, the display driver, the button patches, the camera and the QR
-   pump.
+5. It runs the boot shim: settings (display config and network), green threads,
+   `pbkdf2_hmac`, the display driver, the button patches and the camera.
 6. It calls `Controller.get_instance().start()` (upstream's own entry point),
    which blocks for the lifetime of the worker.
 
@@ -315,8 +343,14 @@ permission before the user chooses to scan.
 Worth being explicit, because "the real firmware" is a claim that deserves a
 boundary:
 
-- Nothing in `seedsigner-stock.zip` is patched. The `seedsigner` package there is the pinned
-  upstream tree; `build/build-firmware-zip.sh` rebuilds it so you can diff.
+- The files in `seedsigner-stock.zip` are not edited. The `seedsigner` package there
+  is the pinned upstream tree; `build/build-firmware-zip.sh` rebuilds it so you can
+  diff.
+- That is a statement about files, not about behaviour. The seams replace firmware
+  functions at runtime, and `browser_threads.py` recompiles some threads' `run()`
+  methods in memory. All of it runs with full access to the firmware and to any
+  seed you enter. What unmodified files buy is that everything this port changes
+  is in `src/web/worker.js`, `src/shims/` and `src/fakes/`, which is what to read.
 - All the seams are installed by replacing attributes at runtime, from modules
   outside the zip, after the firmware is unpacked and before it starts.
 - The traces described above are wrappers around upstream methods. They call

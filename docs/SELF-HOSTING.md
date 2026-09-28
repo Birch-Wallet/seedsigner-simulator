@@ -120,7 +120,7 @@ cp build/out/seedsigner-stock.zip build/out/seedsigner-stock.build-info.json "$d
 | `jsQR.js`, `mp4-muxer.js` | `src/web/` | must be same-origin; a CDN is refused by both COEP and the page's CSP. `mp4-muxer.js` is only the Record button, which stays hidden without it |
 | `sw.js`, `manifest.json`, `icon-*.png`, `apple-touch-icon.png` | `src/web/` | offline cache and PWA install; optional, the firmware runs without them |
 | `pyodide-e24b45d3/` | `fetch-assets.sh` | ~26 MB: the runtime plus the wheels for Pillow and pycryptodome |
-| `browser_display.py`, `browser_camera.py`, `browser_qr.py` | `src/shims/` | fetched at boot and written into Pyodide's filesystem |
+| `browser_display.py`, `browser_camera.py`, `browser_threads.py` | `src/shims/` | fetched at boot and written into Pyodide's filesystem |
 | `seedsigner-stock.zip` | `build/out/` | the pinned `seedsigner` tree plus its pure-Python dependencies plus this repository's stand-in packages |
 | `seedsigner-stock.build-info.json` | `build/out/` | what the build is: pin, tag, published hashes, dependency versions. The page's **i** panel is filled from it, and says it cannot describe the build if it is missing |
 

@@ -9,6 +9,11 @@ importScripts("pyodide-e24b45d3/pyodide.js", "camera.js");
 
 let pyodide = null;
 let keyBuffer = null; // Int32Array over SharedArrayBuffer: [state, keycode]
+// Int32Array over SharedArrayBuffer: [signal, live, wait]. Pyodide's interrupt
+// buffer is slot 0; the page writes SIGINT there to give the green threads a
+// turn, but only while slot 1 says something is live. Slot 2 is only ever
+// waited on, as a sleep that the page cannot cut short.
+let tickBuffer = null;
 let camera = null;    // the page's half of the camera channel, see camera.js
 let debug = false;    // ?debug=1 on the page; otherwise js_log says nothing
 
@@ -31,6 +36,7 @@ self.onmessage = async (event) => {
 
   if (type === "init") {
     keyBuffer = new Int32Array(event.data.sharedBuffer);
+    tickBuffer = new Int32Array(event.data.tickBuffer);
     camera = CameraChannel.forWorker(event.data.cameraBuffer);
     debug = !!event.data.debug;
     if (event.data.bitcoinNetwork) bitcoinNetwork = event.data.bitcoinNetwork;
@@ -77,8 +83,8 @@ async function boot(width, height) {
   const cameraShim = await (await fetch("browser_camera.py")).text();
   pyodide.FS.writeFile("/firmware/browser_camera.py", cameraShim);
 
-  const qrShim = await (await fetch("browser_qr.py")).text();
-  pyodide.FS.writeFile("/firmware/browser_qr.py", qrShim);
+  const threadShim = await (await fetch("browser_threads.py")).text();
+  pyodide.FS.writeFile("/firmware/browser_threads.py", threadShim);
 
   post("status", { stage: "starting", message: "starting SeedSigner…" });
 
@@ -108,16 +114,26 @@ async function boot(width, height) {
     self.postMessage({ type: "network", name: String(name), mainnet: !!mainnet });
   });
 
-  // Blocking read of the next keypress, driven by the page.
-  pyodide.globals.set("js_wait_for_key", () => {
-    Atomics.wait(keyBuffer, STATE, 0);
-    const key = Atomics.load(keyBuffer, KEYCODE);
-    Atomics.store(keyBuffer, STATE, 0);
-    return key;
+  // Whether a press is waiting, without taking it.
+  pyodide.globals.set("js_key_pending", () => Atomics.load(keyBuffer, STATE) !== 0);
+
+  // What the green threads' scheduler parks on between turns. wait_key comes
+  // back early for a press and leaves it where it is, for wait_for to take.
+  pyodide.globals.set("js_threads", {
+    wait_key: (ms) => {
+      Atomics.wait(keyBuffer, STATE, 0, ms < 0 ? Infinity : ms);
+    },
+    wait_ms: (ms) => {
+      Atomics.wait(tickBuffer, 2, 0, Math.max(0, ms));
+    },
+    set_live: (on) => {
+      Atomics.store(tickBuffer, 1, on ? 1 : 0);
+    },
   });
 
-  // Same channel, without the parking. The scan screen polls for a press rather
-  // than blocking on one, because it has camera frames to pull at the same time.
+  // Takes the waiting press, or answers 0. Every read of a key goes through
+  // here: wait_for once the scheduler says one is waiting, and the scan screen's
+  // polling, which has camera frames to pull at the same time.
   pyodide.globals.set("js_peek_key", () => {
     if (Atomics.load(keyBuffer, STATE) === 0) return 0;
     const key = Atomics.load(keyBuffer, KEYCODE);
@@ -126,6 +142,11 @@ async function boot(width, height) {
   });
 
   pyodide.globals.set("js_camera", camera);
+
+  // The tick, for the green threads (see browser_threads.py). Handed over
+  // before the shims run; the handler is installed before the page is ever told
+  // to send one.
+  pyodide.setInterruptBuffer(tickBuffer);
 
   pyodide.runPython(shims(width, height, bitcoinNetwork));
   post("ready", {});
@@ -202,105 +223,15 @@ _settings = {"display_config": ${JSON.stringify(width === 240 && height === 240
 with open("/firmware/settings.json", "w") as handle:
     json.dump(_settings, handle)
 
-# --- no real threads in the browser -----------------------------------------
-class _NoThread:
-    """
-    Stand-in for threading.Thread.
-
-    Two kinds of thread exist in this codebase. SeedSigner's own BaseThread
-    subclasses loop on keep_running to animate something, and running one
-    synchronously would never return, so those are dropped. Everything else is
-    a one-shot helper (startup preloading, for instance) whose work the caller
-    may well be waiting on, so those run inline on start().
-    """
-
-    def __init__(self, group=None, target=None, name=None, args=(), kwargs=None, daemon=None):
-        self._target, self._args, self._kwargs = target, args, kwargs or {}
-        self.name, self.daemon = name or "nothread", daemon
-        self._done = False
-
-    # The controller blocks waiting for BackgroundImportThread to set up storage,
-    # and its run() is a one-shot rather than a loop, so it has to run even
-    # though it is a BaseThread. Without it the firmware hangs forever after the
-    # splash.
-    #
-    # The address verification thread is the other kind of exception. It looks
-    # like an animation loop -- a while over keep_running -- but it is a search
-    # that ends: it walks the derivation path looking for one address and stops
-    # when it finds it. Dropped, nothing ever searched, so Verify Address sat
-    # showing an index that never moved and its Skip 10 incremented a counter no
-    # thread was reading. Run, they answer at once for an address that really is
-    # the firmware's, which is the case worth having work.
-    RUN_INLINE_ANYWAY = {
-        "BackgroundImportThread",
-        "BruteForceAddressVerificationThread",
-    }
-
-    # How far one of those searches may walk before this gives up on it. Upstream
-    # has no bound on the not-found case because on hardware it is a real thread
-    # somebody can cancel; here it would be the whole worker, wedged. A device
-    # that has just exported its own key is being asked about its own first
-    # address, so this only has to be deep enough to be honest about a miss.
-    INLINE_SEARCH_LIMIT = 100
-
-    def _is_animation_loop(self):
-        if type(self).__name__ in self.RUN_INLINE_ANYWAY:
-            return False
-        return hasattr(self, "keep_running")
-
-    def _bound_search(self):
-        """Stop a search thread walking for ever, since nothing else can."""
-        counter = getattr(self, "threadsafe_counter", None)
-        if counter is None or not hasattr(counter, "increment"):
-            return
-        increment = counter.increment
-        thread = self
-
-        def bounded(step=1):
-            increment(step)
-            if counter.cur_count >= _NoThread.INLINE_SEARCH_LIMIT:
-                js_log(f"inline search {type(thread).__name__} gave up at "
-                       f"{counter.cur_count}")
-                thread.keep_running = False
-
-        counter.increment = bounded
-
-    def start(self):
-        js_log(f"thread start: {type(self).__name__} "
-               f"loop={self._is_animation_loop()} target={getattr(self._target, '__name__', None)}")
-        if self._is_animation_loop() or self._done:
-            return
-        self._done = True
-        if type(self).__name__ in _NoThread.RUN_INLINE_ANYWAY and hasattr(self, "keep_running"):
-            self._bound_search()
-        try:
-            self.run()
-        except Exception as exc:
-            js_log(f"inline thread {self.name} failed: {type(exc).__name__}: {exc}")
-
-    def run(self):
-        if self._target:
-            self._target(*self._args, **self._kwargs)
-
-    def stop(self): pass
-    def join(self, timeout=None): pass
-    def is_alive(self): return False
-
-threading.Thread = _NoThread
-
-
-# A lock that cannot deadlock, because there is nobody here to deadlock with.
-#
-# A thread's work run inline on start() runs inside whatever lock its starter
-# was holding. On a device those are two threads and the second one waits a
-# moment for the first. Here they are one thread, and a plain Lock taken twice
-# waits for itself forever.
-#
-# There is one thread in this environment, so the only acquire that can ever
-# block is a thread blocking on itself, which is a deadlock rather than
-# contention. A reentrant lock turns exactly that case into a pass and leaves
-# every other use of a lock as it was.
-threading.Lock = threading.RLock
+# --- threads, taking turns ----------------------------------------------------
+# Pyodide is one thread. SeedSigner's animation threads -- the spinner, the
+# pulsing warning edge, scrolling labels, animated QRs, the camera preview -- run
+# as green threads instead, taking turns with the firmware wherever it waits,
+# and on a tick while it computes. The one-shots still run inline; anything else
+# loop-shaped is still dropped. See browser_threads.py. It has to be in place
+# before seedsigner.models.threads is imported, which binds Thread and Lock.
+import browser_threads
+browser_threads.install(js_threads, js_log)
 
 # --- hashlib here has no OpenSSL behind it -----------------------------------
 # pbkdf2_hmac is not implemented in Python: it lives in _hashlib, the OpenSSL
@@ -373,8 +304,9 @@ Renderer.configure_instance()
 renderer = Renderer.get_instance()
 
 # --- buttons come from the page, not from GPIO -------------------------------
-# The firmware blocks here waiting for a press. In a worker that is exactly what
-# we want: js_wait_for_key parks on Atomics.wait until the page posts a key.
+# The firmware blocks here waiting for a press. Here that wait is the green
+# threads' turn: the scheduler steps whatever is due and parks on the key buffer
+# in between, and a press ends it.
 def _get_instance(cls):
     if cls._instance is None:
         instance = cls.__new__(cls)
@@ -393,11 +325,22 @@ BUTTON_NAMES = [None, "KEY_UP", "KEY_DOWN", "KEY_LEFT", "KEY_RIGHT",
                 "KEY_PRESS", "KEY1", "KEY2", "KEY3"]
 BUTTON_VALUES = [None] + [getattr(HardwareButtonsConstants, n) for n in BUTTON_NAMES[1:]]
 
+# A screen showing a code is deaf for a moment after it opens. Presses aimed at
+# the screen before it are still arriving then, and one of them would dismiss a
+# transaction before a single frame of it had been read.
+import time as _clock
+
+_deaf_until = [0.0]
+
 def _wait_for(self, keys=[]):
     js_log(f'wait_for keys={keys!r}')
     while True:
-        index = js_wait_for_key()
+        browser_threads.idle_until(js_key_pending, wake_on_key=True)
+        index = js_peek_key()
         if index < 1 or index >= len(BUTTON_VALUES):
+            continue
+        if _clock.monotonic() < _deaf_until[0]:
+            js_log(f'key index={index} dropped: the screen is still opening')
             continue
         value = BUTTON_VALUES[index]
         js_log(f'key index={index} -> {value!r} accepted={not keys or value in keys}')
@@ -421,6 +364,8 @@ _PENDING_KEYS = []  # [value, times offered]
 _MAX_OFFERS = 4
 
 def _check_for_low(self, key=None, keys=None):
+    # The scan loop polls here once a pass, so it is where the preview gets its turn.
+    browser_threads.step_due()
     index = js_peek_key()
     if 1 <= index < len(BUTTON_VALUES):
         _PENDING_KEYS.append([BUTTON_VALUES[index], 0])
@@ -439,22 +384,6 @@ def _check_for_low(self, key=None, keys=None):
 HardwareButtons.get_instance = classmethod(_get_instance)
 HardwareButtons.wait_for = _wait_for
 HardwareButtons.update_last_input_time = _update_last_input_time
-# A screen showing a code is deaf for a moment after it opens. Presses aimed at
-# the screen before it are still arriving then, and one of them would dismiss a
-# transaction before a single frame of it had been read.
-import time as _clock
-
-_deaf_until = [0.0]
-
-def _poll_button():
-    index = js_peek_key()
-    if 1 <= index < len(BUTTON_VALUES):
-        _PENDING_KEYS.append([BUTTON_VALUES[index], 0])
-    if _clock.monotonic() < _deaf_until[0]:
-        _PENDING_KEYS.clear()
-        return None
-    return _PENDING_KEYS.pop(0)[0] if _PENDING_KEYS else None
-
 HardwareButtons.check_for_low = _check_for_low
 HardwareButtons.has_any_input = lambda self: False
 HardwareButtons.trigger_override = lambda self, force_release=False: None
@@ -462,10 +391,6 @@ HardwareButtons.trigger_override = lambda self, force_release=False: None
 # --- the camera, and the QR decode, both come from the page -------------------
 import browser_camera
 browser_camera.install(js_camera)
-
-# --- the screens that show a QR draw from a thread this port cannot run ------
-import browser_qr
-browser_qr.install(_poll_button)
 
 js_report_size(renderer.canvas_width, renderer.canvas_height)
 
@@ -493,24 +418,25 @@ BaseScreen._run = _traced_run
 
 # A code on screen must not be dismissed by a press made before it appeared.
 #
-# browser_qr pumps this screen by drawing a frame and then polling for a key,
-# and that poll pops from the same queue check_for_low fills, where a press
-# stays claimable for several reads so the scan loop cannot miss it. A press
-# aimed at the screen before this one was therefore still sitting there, and
-# the code was gone after a single frame. An animated transaction never got to
-# animate, so the page had nothing to read back.
+# The press that opened this screen, or one just after it, is still arriving as
+# it opens: sitting in the queue check_for_low fills, where a press stays
+# claimable for several reads so the scan loop cannot miss it, or still on its
+# way from the page. Either would dismiss the code after a single frame, and an
+# animated transaction would never get to animate, so the page had nothing to
+# read back.
 #
 # Real hardware cannot do this: a button pressed before a screen exists is not
-# waiting for it. So the queue is emptied as the screen opens.
+# waiting for it. So the queue is emptied as the screen opens, and wait_for
+# ignores presses for a moment after.
 from seedsigner.gui.screens.screen import QRDisplayScreen as _QRScreen
-_pumped_qr_run = _QRScreen._run
+_upstream_qr_run = _QRScreen._run
 
 def _qr_run_from_a_clean_queue(self):
     _PENDING_KEYS.clear()
     while js_peek_key():
         pass
     _deaf_until[0] = _clock.monotonic() + 1.5
-    return _pumped_qr_run(self)
+    return _upstream_qr_run(self)
 
 _QRScreen._run = _qr_run_from_a_clean_queue
 

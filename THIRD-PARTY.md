@@ -1,7 +1,7 @@
 # Third-party components
 
 Almost none of the code that runs in this simulator was written for it. The
-firmware is upstream SeedSigner, unmodified. The Python interpreter is Pyodide.
+firmware is upstream SeedSigner, its files unmodified. The Python interpreter is Pyodide.
 The QR decoder is jsQR, and recordings are packed into MP4 by mp4-muxer. Everything the firmware imports is somebody else's
 library, pinned to a version and fetched from its own upstream.
 
@@ -118,7 +118,8 @@ it fetches.
 * In the zip as: `seedsigner/`, `main.py`, `LICENSE.md`
 
 Verbatim, byte for byte, from `src/seedsigner` and `src/main.py` at that commit.
-Nothing in this repository patches it. The pin lives in `UPSTREAM`; the build
+Nothing in this repository edits these files; this repository's changes are made
+at runtime, from `src/web/worker.js`, `src/shims/` and `src/fakes/`. The pin lives in `UPSTREAM`; the build
 script reads it from there and aborts if the checkout lands anywhere else.
 
 To check the copy in a built zip against upstream directly:

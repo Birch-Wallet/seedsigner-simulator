@@ -1,7 +1,7 @@
 # Tests
 
-The simulator runs unmodified stock SeedSigner firmware under Pyodide, with its
-hardware seams faked from outside it. These tests exist to check the seams,
+The simulator runs stock SeedSigner firmware under Pyodide, its files unmodified,
+with its hardware seams faked at runtime from outside them. These tests exist to check the seams,
 because that is where a browser port can quietly start lying: a camera that
 reports a QR nobody held up, a key that never arrives.
 
@@ -28,7 +28,7 @@ everything against it, and stops the server afterwards. The first run also
 downloads the Pyodide runtime and builds the firmware zip from its pinned upstream
 commit, which takes a few minutes; later runs reuse all of it.
 
-A subset, by substring on the step name -- the names are `leak_scan`, `device`, `record`,
+A subset, by substring on the step name -- the names are `leak_scan`, `device`, `record`, `threads`,
 `build_info`, `settings`, `scan_seedqr`, `scan_compact`, `scan_native`,
 `camera_stall`, `passphrase`, `image_entropy`, `mainnet`:
 
