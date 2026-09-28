@@ -56,6 +56,22 @@ verified than committed.
 ./build/build-firmware-zip.sh      # -> build/out/seedsigner-stock.zip, from the pinned commit
 ```
 
+Both scripts need `bash`, `git`, `curl`, `sha256sum` (or `shasum`) and a `python3`
+whose `tarfile` has the extraction filter: Python 3.12 or later, or 3.11.4,
+3.10.12, 3.9.17 or 3.8.17 and later. Debian 12's stock 3.11.2 is too old and fails
+with `extractall() got an unexpected keyword argument 'filter'`. Do not replace
+the system Python for this; put a newer one ahead of it for the user who builds,
+for example with [uv](https://docs.astral.sh/uv/):
+
+```sh
+curl -LsSf https://astral.sh/uv/install.sh | sh     # into ~/.local/bin
+~/.local/bin/uv python install 3.12
+ln -sf ~/.local/bin/python3.12 ~/.local/bin/python3  # ~/.local/bin comes before /usr/bin
+```
+
+Building with the same Python as CI also keeps the firmware zip byte-for-byte the
+published one.
+
 `fetch-assets.sh --check` re-verifies what is already on disk, and
 `sha256sum -c build/checksums.txt` covers everything that is committed and then
 served or packaged as it stands: jsQR, the page and its scripts, the icons, the
@@ -119,7 +135,7 @@ cp build/out/seedsigner-stock.zip build/out/seedsigner-stock.build-info.json "$d
 | `worker.js`, `camera.js`, `seedsigner-device.js`, `recorder.js` | `src/web/` | |
 | `jsQR.js`, `mp4-muxer.js` | `src/web/` | must be same-origin; a CDN is refused by both COEP and the page's CSP. `mp4-muxer.js` is only the Record button, which stays hidden without it |
 | `sw.js`, `manifest.json`, `icon-*.png`, `apple-touch-icon.png` | `src/web/` | offline cache and PWA install; optional, the firmware runs without them |
-| `og-image.png` | `src/web/` | the 1200×630 preview a shared link shows; optional. The Open Graph and Twitter tags in `index.html` point at it by absolute URL on `seedsigner.birchwallet.app`, since link scrapers want absolute URLs, so a copy hosted elsewhere changes those `og:`/`twitter:` URLs and the canonical link to its own address. `build/make-og-image.py` regenerates it from the running simulator (design in `build/og-image/`); it is a step a person runs when the picture should change, never part of a build |
+| `og-image.png` | `src/web/` | the 1200×630 preview a shared link shows; optional. Serve it with `Cross-Origin-Resource-Policy: cross-origin` (see the nginx notes) or previews come out blank. The Open Graph and Twitter tags in `index.html` point at it by absolute URL on `seedsigner.birchwallet.app`, since link scrapers want absolute URLs, so a copy hosted elsewhere changes those `og:`/`twitter:` URLs and the canonical link to its own address. `build/make-og-image.py` regenerates it from the running simulator (design in `build/og-image/`); it is a step a person runs when the picture should change, never part of a build |
 | `licenses/` | `src/web/` | the third-party notices and licence texts, linked from the page's **i** panel. Not optional: jsQR's, zxing-wasm's, mp4-muxer's and Pyodide's licences each require that whoever receives the files gets their licence with them, and on a website that is the visitor |
 | `pyodide-e24b45d3/` | `fetch-assets.sh` | ~26 MB: the runtime plus the wheels for Pillow and pycryptodome |
 | `zxing-2416232a/` | `fetch-assets.sh` | ~1 MB: the QR decoder, in every browser. Without it the page still scans, with jsQR, but slower to lock on, and in a browser with no `BarcodeDetector` (Safari, every browser on an iPhone, Chrome on Windows and Linux) it can take many seconds. Same-origin for the same reasons as jsQR, and, like Pyodide, it wants `.wasm` served as `application/wasm` |
@@ -146,6 +162,35 @@ server {
     add_header Cross-Origin-Opener-Policy   same-origin  always;
     add_header Cross-Origin-Embedder-Policy require-corp always;
     add_header Cross-Origin-Resource-Policy same-origin  always;
+
+    # The page and its scripts change every deploy: always ask whether they
+    # have, so a deploy reaches returning visitors. Unchanged files come back
+    # as a cheap 304.
+    location / {
+        try_files $uri $uri/ =404;
+        add_header Cache-Control "no-cache" always;
+        add_header Cross-Origin-Opener-Policy   same-origin  always;
+        add_header Cross-Origin-Embedder-Policy require-corp always;
+        add_header Cross-Origin-Resource-Policy same-origin  always;
+    }
+
+    # Pyodide and zxing-wasm sit in directories named by a hash of what is in
+    # them, so a new version is a new URL: cache them for good.
+    location ~ ^/(pyodide|zxing)-[0-9a-f]{8}/ {
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        add_header Cross-Origin-Opener-Policy   same-origin  always;
+        add_header Cross-Origin-Embedder-Policy require-corp always;
+        add_header Cross-Origin-Resource-Policy same-origin  always;
+    }
+
+    # The link preview is for other sites to show, so they must be allowed to
+    # load it; same-origin here leaves previews blank in checkers and in chat
+    # apps that load the image straight from this site. The page never loads
+    # it, so isolation is untouched.
+    location = /og-image.png {
+        add_header Cross-Origin-Resource-Policy cross-origin always;
+        add_header Cache-Control "public, max-age=86400" always;
+    }
 }
 ```
 
@@ -157,7 +202,14 @@ Two nginx-specific traps:
   Repeat them in that location.
 - **`.wasm` must be served as `application/wasm`.** Recent `mime.types` include it;
   older ones do not, and Pyodide's streaming compilation refuses the wrong type.
-  Check with `curl -I …/pyodide/pyodide.asm.wasm`.
+  Check with `curl -I …/pyodide/pyodide.asm.wasm`. Add it to `mime.types` rather
+  than with a `types { }` block in the server: that block replaces the whole
+  inherited list, and the page and its scripts lose their types.
+- **Point `root` at the flattened directory, never at a clone of this
+  repository.** A clone served as it stands answers for `.git/` and everything
+  else in it, and has no `index.html` at its top. Deploying from a clone on the
+  server is fine: build into a directory inside it (listed in
+  `.git/info/exclude`) and make that the `root`.
 
 ## Caddy
 
@@ -169,6 +221,8 @@ sim.example.org {
         Cross-Origin-Embedder-Policy require-corp
         Cross-Origin-Resource-Policy same-origin
     }
+    # The link preview may be shown by other sites (see the nginx notes).
+    header /og-image.png Cross-Origin-Resource-Policy cross-origin
     file_server
 }
 ```

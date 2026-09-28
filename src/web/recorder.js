@@ -19,11 +19,19 @@
 (function (global) {
   "use strict";
 
-  // High, Main, Constrained Baseline, Baseline, all at level 4.0, which is the
+  // Constrained Baseline, Baseline, Main, High, all at level 4.0, which is the
   // lowest that takes either shell: the Plus films at 2096x846, the hat at
-  // 1936x846. Firefox's encoder is OpenH264 and only does baseline, so the
-  // list has to reach that far.
-  var CODECS = ["avc1.640028", "avc1.4d0028", "avc1.42e028", "avc1.420028"];
+  // 1936x846. Baseline first, everywhere: Safari's encoder, asked for Main or
+  // High, holds every frame back for reordering and never hands one out, so
+  // flush() never settles and Stop never saves. Firefox's OpenH264 only does
+  // Baseline anyway, every player plays it, and for footage of a still UI it
+  // costs next to nothing. Main and High stay as a last resort.
+  var CODECS = ["avc1.42e028", "avc1.420028", "avc1.4d0028", "avc1.640028"];
+
+  // How long Stop may wait for the encoder to hand back its last frames. It
+  // takes well under a second; this is only so an encoder that has stopped
+  // answering is reported, not waited on for ever.
+  var FLUSH_TIMEOUT_MS = 15000;
 
   var HEARTBEAT_MS = 1000;
   var KEYFRAME_US = 2e6;
@@ -219,10 +227,18 @@
         // The screen that was up when Stop was pressed, held until then.
         encode(FRAME_US);
         halt();
-        return encoder.flush().then(function () {
+        var stuck = new Promise(function (_, reject) {
+          setTimeout(function () {
+            reject(new Error("the browser's video encoder stopped responding"));
+          }, FLUSH_TIMEOUT_MS);
+        });
+        return Promise.race([encoder.flush(), stuck]).then(function () {
           muxer.finalize();
           encoder.close();
           return new Blob([target.buffer], { type: "video/mp4" });
+        }, function (error) {
+          try { encoder.close(); } catch (ignored) { /* already closed */ }
+          throw error;
         });
       }
 

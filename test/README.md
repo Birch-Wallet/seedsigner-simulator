@@ -89,7 +89,12 @@ is hidden behind a prompt to turn the phone, and the prompt still carries the
 never-enter-a-real-seed warning. Turned sideways, the prompt goes, turning is not
 taken as a request for fullscreen, title, warning, device and control bar come in
 that order down the page and all fit on one screen without scrolling, the bar's
-buttons are 44 pixels, and a tap on a drawn key lands on that key. Fullscreen
+buttons are 44 pixels, and a tap on a drawn key lands on that key. Quick taps
+are presses, never a zoom: three fast taps on a key are three presses, and every
+touch on a key -- or a quick second touch anywhere else that is not a control --
+is cancelled for the browser, which is what keeps iOS Safari from reading it as
+a double- or triple-tap zoom; the whole page is `touch-action: manipulation`
+too. Fullscreen
 gives the device the whole page for the biggest keys, over 44 pixels for both
 devices, with room between neighbouring keys; held upright in fullscreen it still
 asks to be turned. The firmware's own screen stays 4:3 and unstretched
