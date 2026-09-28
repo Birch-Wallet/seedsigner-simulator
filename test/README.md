@@ -83,17 +83,16 @@ count one.
 The 240x240 hat gets the same treatment: the same eight keys, each tap exactly
 one press of its own key, and its square screen no control either.
 
-Then the page on a phone, which is landscape-first. Held upright, the whole page
-is drawn turned a quarter, so the test checks it lies that way, that title,
-warning, device and control bar still come in that order down the page (read in
-the page's own coordinates, which run across the screen when it is turned), that
-the bar's buttons are 44 pixels, and that a tap through the rotation lands on the
-key under the finger. Held sideways, the page is not turned, turning is not
-taken as a request for fullscreen, and title, warning, device and bar all fit on
-one screen without scrolling. Fullscreen gives the device the whole page for the
-biggest keys, over 44 pixels in both orientations and for both devices, with room
-between neighbouring keys, and the firmware's own screen stays 4:3 and
-unstretched throughout, since what the scan tests compare is that canvas.
+Then the page on a phone, which is landscape-first. Held upright, the simulator
+is hidden behind a prompt to turn the phone, and the prompt still carries the
+never-enter-a-real-seed warning. Turned sideways, the prompt goes, turning is not
+taken as a request for fullscreen, title, warning, device and control bar come in
+that order down the page and all fit on one screen without scrolling, the bar's
+buttons are 44 pixels, and a tap on a drawn key lands on that key. Fullscreen
+gives the device the whole page for the biggest keys, over 44 pixels for both
+devices, with room between neighbouring keys; held upright in fullscreen it still
+asks to be turned. The firmware's own screen stays 4:3 and unstretched
+throughout, since what the scan tests compare is that canvas.
 
 **`test_build_info.py`**: the **i** panel, and the one check the page
 makes about itself. The panel is where a visitor is told what is running, so

@@ -22,6 +22,7 @@ a second.
 """
 
 import os
+import re
 import shutil
 import sys
 
@@ -97,12 +98,24 @@ PROMPT_S = 1.5
 
 
 def step(page, log, key):
-    """Press a key, wait until the firmware is waiting for the next one, and
-    note how long the press took to show on screen."""
+    """Press a key, wait until the firmware has taken it and is waiting for the
+    next one, and note how long the press took to show on screen.
+
+    Taken first, then waiting: the log reaches this process asynchronously, so a
+    "waiting for a key" line from the press before can still be arriving after
+    this one is made, and would otherwise pass for its answer."""
     mark = log.mark()
     pressed = page.evaluate("() => performance.now()")
     page.keyboard.press(key)
-    log.wait(r"wait_for keys=", 60, f"the firmware to answer {key}", mark)
+    log.wait(r"key index=\d+ .*accepted=True", 60, f"the firmware to take {key}", mark)
+    taken = next(i for i in range(mark, len(log.lines))
+                 if re.search(r"key index=\d+ .*accepted=True", log.lines[i]))
+    log.wait(r"wait_for keys=", 60, f"the firmware to answer {key}", taken + 1)
+    try:
+        page.wait_for_function("(t) => window.__frames.some((f) => f > t)", arg=pressed,
+                               timeout=PROMPT_S * 2000)
+    except Exception:
+        pass
     shown = first_frame_after(page, pressed)
     ANSWERS.append((key, None if shown is None else (shown - pressed) / 1000))
 

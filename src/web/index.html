@@ -34,9 +34,9 @@
 <style>
   /* The page is one screen, laid out for a landscape phone first: title and
      warning on top, the device taking whatever height is left, the control bar
-     under it. --page-w and --page-h are the page's own size, which is the
-     viewport's -- or the viewport's turned, when a phone held upright gets the
-     whole page drawn sideways (body.rotated, set by the script). */
+     under it. --page-w and --page-h are the page's own size. A phone held
+     upright gets a prompt to turn it instead (body.upright, set by the
+     script). */
   :root { color-scheme: dark; --page-w: 100vw; --page-h: 100vh; }
   @supports (height: 100dvh) { :root { --page-w: 100dvw; --page-h: 100dvh; } }
   body {
@@ -50,11 +50,67 @@
     display: flex; flex-direction: column; align-items: center; gap: .75rem;
     justify-content: safe center;
   }
-  body.rotated { overflow: hidden; --page-w: 100dvh; --page-h: 100dvw; }
-  @supports not (height: 100dvh) { body.rotated { --page-w: 100vh; --page-h: 100vw; } }
-  body.rotated #app {
-    position: fixed; top: 0; left: 0;
-    transform-origin: top left; transform: translateX(var(--page-h)) rotate(90deg);
+  /* Held upright, a phone gets this instead of the simulator: the device is
+     landscape, and on its side the page has the room for it. The firmware
+     keeps booting behind it, so turning the phone shows it ready. */
+  #turn { display: none; }
+  body.upright { overflow: hidden; }
+  body.upright #app { display: none; }
+  body.upright #turn {
+    position: fixed; inset: 0; z-index: 100; box-sizing: border-box;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 1.1rem; padding: 2rem 1.5rem; text-align: center;
+    background:
+      radial-gradient(28rem 22rem at 50% 42%, rgba(247,147,26,.16), rgba(247,147,26,0) 70%),
+      #0b0c0e;
+  }
+  .turn-kicker {
+    margin: 0; font-size: .72rem; font-weight: 700; letter-spacing: .2em;
+    text-transform: uppercase; color: #f7931a;
+  }
+  .turn-title { margin: 0; font-size: 1.5rem; font-weight: 700; color: #e6eaef; line-height: 1.2; }
+  .turn-text { margin: 0; max-width: 20rem; color: #9aa3ae; font-size: .95rem; line-height: 1.5; }
+  #turn .warn { font-size: .85rem; }
+  .turn-art { width: 9.5rem; height: 9.5rem; margin: .5rem 0; }
+  .turn-art .phone { transform-origin: 60px 60px; }
+  .turn-art .arrow { opacity: .9; }
+  @media (prefers-reduced-motion: no-preference) {
+    .turn-art .phone { animation: turn-phone 3.2s cubic-bezier(.65, 0, .35, 1) infinite; }
+    .turn-art .arrow { animation: turn-arrow 3.2s ease-in-out infinite; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .turn-art .phone { transform: rotate(-90deg); }
+  }
+  /* Turning the phone swaps the prompt for the page. Each settles in rather
+     than snapping: a display change restarts a CSS animation, so these play
+     every time the phone turns. The device eases out of a slight tilt, as if it
+     had come round with the phone. Touch only, so a desktop loads as it was. */
+  @media (prefers-reduced-motion: no-preference) {
+    body.touch #app { animation: page-arrive .34s cubic-bezier(.2, .8, .2, 1); }
+    body.touch #stage { animation: device-arrive .42s cubic-bezier(.2, .8, .2, 1); }
+    body.upright #turn { animation: prompt-arrive .28s ease-out; }
+  }
+  @keyframes page-arrive {
+    from { opacity: 0; transform: scale(.96); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes device-arrive {
+    from { transform: rotate(-6deg) scale(.94); }
+    to { transform: none; }
+  }
+  @keyframes prompt-arrive {
+    from { opacity: 0; transform: scale(.97); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes turn-phone {
+    0%, 18% { transform: rotate(0deg); }
+    45%, 78% { transform: rotate(-90deg); }
+    100% { transform: rotate(0deg); }
+  }
+  @keyframes turn-arrow {
+    0%, 12% { opacity: 0; }
+    22%, 45% { opacity: .9; }
+    60%, 100% { opacity: 0; }
   }
   #top {
     flex: none; width: 100%;
@@ -271,7 +327,6 @@
   @media (max-width: 46rem), (max-height: 30rem) {
     body.touch #fullscreen { display: inline-flex; }
   }
-  body.rotated #fullscreen { display: inline-flex; }
   #rec-go::before {
     content: ""; width: .85em; height: .85em; border-radius: 50%;
     background: currentColor; flex: none;
@@ -361,6 +416,35 @@
 </style>
 </head>
 <body>
+<div id="turn" role="dialog" aria-labelledby="turn-title">
+  <p class="turn-kicker">SeedSigner Web Simulator</p>
+  <svg class="turn-art" viewBox="0 0 120 120" aria-hidden="true" focusable="false">
+    <!-- A curved arrow showing which way to turn. -->
+    <path class="arrow" d="M28 30 A40 40 0 0 0 20 70" fill="none" stroke="#f7931a"
+          stroke-width="3" stroke-linecap="round"/>
+    <path class="arrow" d="M14 63 L20 72 L27 64" fill="none" stroke="#f7931a"
+          stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- The phone, and on its screen the device, laid along the long side. -->
+    <g class="phone">
+      <rect x="40" y="16" width="40" height="88" rx="8" fill="#16181c"
+            stroke="#aab2bd" stroke-width="3"/>
+      <rect x="54" y="21" width="12" height="2.5" rx="1.25" fill="#3a4048"/>
+      <g transform="rotate(90 60 60)">
+        <rect x="31" y="50.5" width="58" height="19" rx="9.5" fill="#55585c"/>
+        <rect x="52" y="54" width="16" height="12" rx="1.5" fill="#0b0c0e"/>
+        <rect x="54" y="56" width="5" height="3.5" rx=".6" fill="#f7931a"/>
+        <circle cx="41" cy="60" r="2.6" fill="#e2ded4"/>
+        <circle cx="79" cy="56" r="1.8" fill="#e2ded4"/>
+        <circle cx="79" cy="60" r="1.8" fill="#e2ded4"/>
+        <circle cx="79" cy="64" r="1.8" fill="#e2ded4"/>
+      </g>
+    </g>
+  </svg>
+  <h2 class="turn-title" id="turn-title">Turn your phone sideways</h2>
+  <p class="turn-text">A SeedSigner is a landscape device. Rotate your phone to use
+  the simulator; it is starting up in the meantime.</p>
+  <p class="warn"><strong>Never enter a real seed phrase</strong></p>
+</div>
 <div id="app">
   <div id="top">
   <header>
@@ -579,15 +663,11 @@ document.addEventListener("pointerdown", (event) => {
 document.addEventListener("keydown", (event) => {
   if (aboutPanel.open && event.key === "Escape") aboutPanel.open = false;
 });
-// Where the i actually is, so the panel's text starts below it. Measured on
-// the screen, then turned back into the page's own coordinates when the page
-// is drawn sideways: its top edge runs down the screen's right-hand side.
+// Where the i actually is, so the panel's text starts below it.
 aboutPanel.addEventListener("toggle", () => {
   if (!aboutPanel.open) return;
   const icon = aboutPanel.querySelector("summary").getBoundingClientRect();
-  const bottom = document.body.classList.contains("rotated")
-    ? document.documentElement.clientWidth - icon.left : icon.bottom;
-  aboutPanel.style.setProperty("--about-top", Math.round(bottom + 20) + "px");
+  aboutPanel.style.setProperty("--about-top", Math.round(icon.bottom + 20) + "px");
 });
 
 // The build half of the i panel, read from seedsigner-stock.build-info.json, which
@@ -732,21 +812,20 @@ function paint(bytes) {
 canvas.width = W; canvas.height = H;
 mountDevice(W, H);
 
-// Mobile first. A phone is for landscape: held upright, the whole page is
-// drawn turned a quarter, so it reads right with the phone on its side, and on
-// its side it is simply the page. Short pages -- a phone either way -- put the
-// title and warning on one line so the device gets the height. Browsers can
-// only lock the orientation from fullscreen, and iOS not even then, so turning
-// the page is what makes landscape happen everywhere.
+// Mobile first. A phone is for landscape: held upright it is asked to turn,
+// and on its side it is simply the page. Short pages put the title and warning
+// on one line so the device gets the height. Browsers can only lock the
+// orientation from fullscreen, and iOS not even then, so asking is what works
+// everywhere.
 const canTurn = matchMedia("(pointer: coarse)").matches
              || navigator.maxTouchPoints > 0;
 if (canTurn) document.body.classList.add("touch");
 function layOut() {
   const width = document.documentElement.clientWidth;
   const height = window.innerHeight;
-  const rotated = canTurn && height > width && width <= 640;
-  document.body.classList.toggle("rotated", rotated);
-  document.body.classList.toggle("compact", (rotated ? width : height) < 560);
+  const upright = canTurn && height > width && width <= 640;
+  document.body.classList.toggle("upright", upright);
+  document.body.classList.toggle("compact", height < 560);
 }
 
 // The height left for the device: the page's, less everything else on it and

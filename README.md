@@ -7,6 +7,24 @@ keyboard, the camera is your webcam.
 It runs stock SeedSigner **0.8.7**, exactly as the SeedSigner project publishes
 it, and nothing else.
 
+Forked from [bitsagarob/seedsigner-simulator](https://github.com/bitsagarob/seedsigner-simulator),
+cut down to stock SeedSigner alone, and extended:
+
+- **Two devices.** The SeedSigner Plus at 320×240, or the original Waveshare
+  1.3" hat at 240×240, switchable from the page.
+- **Animation.** The firmware's own animation threads run: the spinner, pulsing
+  warning edges, scrolling labels, the PSBT overview, animated QRs and the camera
+  preview. Toast threads are supported too, though stock firmware only raises
+  microSD toasts, which never appear here.
+- **Recording.** An MP4 of the session, the screen alone or the whole device
+  centred on a dark or light background, made in the browser.
+- **Mobile first.** One control bar under the device, landscape on phones with a
+  prompt to turn when held upright, and fullscreen for thumb-sized keys.
+- **Fixes.** QR brightness now works on the QR screens, and every QR is drawn
+  sharp, as on the device.
+- **Hosted** at [seedsigner.birchwallet.app](https://seedsigner.birchwallet.app),
+  with a link preview for sharing.
+
 > ### Insecure by design
 >
 > **Never type in a seed phrase you rely on.** Use a published test seed.
@@ -110,8 +128,8 @@ composed from the firmware's frames in the browser, so the pointer is never in i
 
 Every control sits in one bar under the device: device, record, recording
 settings, and on a phone, fullscreen. A phone is landscape-first: held upright,
-the whole page is drawn turned sideways so it reads right with the phone
-turned; fullscreen gives the device the whole screen for the biggest keys.
+it shows a prompt to turn it sideways while the firmware starts up behind it;
+fullscreen gives the device the whole screen for the biggest keys.
 
 The firmware's own animation threads run too: the spinner, pulsing warning
 edges, scrolling labels, the PSBT overview's animation, animated QRs and the
@@ -184,9 +202,6 @@ Copyright (c) 2021 SeedSigner), and the browser side rests on
 [Pyodide](https://pyodide.org), [jsQR](https://github.com/cozmo/jsQR) and
 [mp4-muxer](https://github.com/Vanilagy/mp4-muxer).
 [THIRD-PARTY.md](THIRD-PARTY.md) lists every dependency and how to check it.
-
-Forked from [bitsagarob/seedsigner-simulator](https://github.com/bitsagarob/seedsigner-simulator)
-and cut down to stock SeedSigner alone.
 
 Independent project, not affiliated with or endorsed by SeedSigner. Running it
 proves nothing about a real device.
