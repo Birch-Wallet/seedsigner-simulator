@@ -119,6 +119,7 @@ cp build/out/seedsigner-stock.zip build/out/seedsigner-stock.build-info.json "$d
 | `worker.js`, `camera.js`, `seedsigner-device.js`, `recorder.js` | `src/web/` | |
 | `jsQR.js`, `mp4-muxer.js` | `src/web/` | must be same-origin; a CDN is refused by both COEP and the page's CSP. `mp4-muxer.js` is only the Record button, which stays hidden without it |
 | `sw.js`, `manifest.json`, `icon-*.png`, `apple-touch-icon.png` | `src/web/` | offline cache and PWA install; optional, the firmware runs without them |
+| `og-image.png` | `src/web/` | the 1200×630 preview a shared link shows; optional. The Open Graph and Twitter tags in `index.html` point at it by absolute URL on `seedsigner.birchwallet.app`, since link scrapers want absolute URLs, so a copy hosted elsewhere changes those `og:`/`twitter:` URLs and the canonical link to its own address. `build/make-og-image.py` regenerates it from the running simulator (design in `build/og-image/`); it is a step a person runs when the picture should change, never part of a build |
 | `licenses/` | `src/web/` | the third-party notices and licence texts, linked from the page's **i** panel. Not optional: jsQR's, mp4-muxer's and Pyodide's licences each require that whoever receives the files gets their licence with them, and on a website that is the visitor |
 | `pyodide-e24b45d3/` | `fetch-assets.sh` | ~26 MB: the runtime plus the wheels for Pillow and pycryptodome |
 | `browser_display.py`, `browser_camera.py`, `browser_threads.py` | `src/shims/` | fetched at boot and written into Pyodide's filesystem |

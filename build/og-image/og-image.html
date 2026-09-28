@@ -1,0 +1,98 @@
+<!doctype html>
+<!--
+  The design of src/web/og-image.png, the 1200x630 preview a shared link shows.
+  build/make-og-image.py serves this beside the simulator, boots the firmware,
+  and hands compose() the firmware's own home screen; the device around it is
+  drawn by the site's own seedsigner-device.js. Not served to visitors.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>og-image</title>
+<style>
+  html, body { margin: 0; }
+  body {
+    width: 1200px; height: 630px; overflow: hidden; position: relative;
+    font-family: -apple-system, system-ui, "SF Pro Display", Inter, "Helvetica Neue", Arial, sans-serif;
+    color: #e6eaef; background: #0b0c0e;
+  }
+  /* A soft Bitcoin-orange glow behind the device, a little blue low left. */
+  .glow {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(900px 520px at 78% 55%, rgba(247,147,26,.22), rgba(247,147,26,0) 60%),
+      radial-gradient(700px 400px at 10% 110%, rgba(80,110,160,.14), rgba(0,0,0,0) 70%),
+      linear-gradient(160deg, #111318 0%, #0b0c0e 55%, #08090b 100%);
+  }
+  /* A faint grid, fading out away from the device. */
+  .grid {
+    position: absolute; inset: 0; opacity: .07;
+    background-image: linear-gradient(#fff 1px, transparent 1px),
+                      linear-gradient(90deg, #fff 1px, transparent 1px);
+    background-size: 40px 40px;
+    -webkit-mask-image: radial-gradient(700px 420px at 75% 50%, #000 0%, transparent 75%);
+            mask-image: radial-gradient(700px 420px at 75% 50%, #000 0%, transparent 75%);
+  }
+  #device {
+    position: absolute !important; left: 470px; top: 150px;
+    transform: perspective(1600px) rotateY(-16deg) rotateZ(-3deg);
+    filter: drop-shadow(0 30px 40px rgba(0,0,0,.6));
+  }
+  #device .ssd-screen-slot > img {
+    display: block; width: 100%; height: 100%; image-rendering: pixelated;
+  }
+  .words { position: absolute; left: 64px; top: 92px; width: 520px; }
+  .kicker {
+    font-size: 22px; font-weight: 700; letter-spacing: .22em;
+    color: #f7931a; text-transform: uppercase;
+  }
+  .title { font-size: 76px; font-weight: 800; line-height: 1; letter-spacing: -.02em; margin: 14px 0 0; }
+  .sub { font-size: 27px; line-height: 1.35; color: #aab2bd; margin: 22px 0 0; max-width: 420px; }
+  .chip {
+    position: absolute; left: 64px; bottom: 108px;
+    font-size: 17px; font-weight: 600; color: #f18f8f;
+    border: 1.5px solid #7f1d1d; background: rgba(27,15,16,.85);
+    border-radius: 999px; padding: 6px 14px;
+  }
+  .url { position: absolute; left: 64px; bottom: 58px; font-size: 24px; font-weight: 600; }
+  .url b { color: #f7931a; font-weight: 600; }
+  .dot {
+    display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+    background: #22c55e; box-shadow: 0 0 12px #22c55e;
+    margin-right: 10px; vertical-align: 2px;
+  }
+</style>
+</head>
+<body>
+  <div class="glow"></div>
+  <div class="grid"></div>
+  <div id="device"></div>
+  <div class="words">
+    <div class="kicker">SeedSigner</div>
+    <div class="title">Web<br>Simulator</div>
+    <p class="sub">The real SeedSigner firmware, running in your browser.</p>
+  </div>
+  <span class="chip">Testnet · never enter a real seed</span>
+  <div class="url"><span class="dot"></span><b>seedsigner</b>.birchwallet.app</div>
+
+<script src="seedsigner-device.js"></script>
+<script>
+  // Draws the SeedSigner Plus around `screen`, a data: URL of the firmware's
+  // 320x240 canvas. Resolves once the screen image has loaded.
+  window.compose = (screen) => {
+    const box = document.getElementById("device");
+    const device = SeedSignerDevice.render(box, {
+      screenWidth: 320, screenHeight: 240, interactive: false,
+    });
+    // render() sizes the container itself; this one is sized for the card.
+    box.style.setProperty("width", "800px", "important");
+    box.style.maxWidth = "none";
+    const picture = new Image();
+    const loaded = new Promise((resolve) => { picture.onload = resolve; });
+    picture.src = screen;
+    device.screen.appendChild(picture);
+    return loaded;
+  };
+</script>
+</body>
+</html>
