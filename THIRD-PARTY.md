@@ -2,7 +2,7 @@
 
 Almost none of the code that runs in this simulator was written for it. The
 firmware is upstream SeedSigner, unmodified. The Python interpreter is Pyodide.
-The QR decoder is jsQR. Everything the firmware imports is somebody else's
+The QR decoder is jsQR, and recordings are packed into MP4 by mp4-muxer. Everything the firmware imports is somebody else's
 library, pinned to a version and fetched from its own upstream.
 
 This file lists all of it: what it is, which version or commit, where it comes
@@ -14,7 +14,7 @@ checkable in a different way:
 
 | Route | What it is | How to check it |
 | --- | --- | --- |
-| Committed to this repository | `src/web/jsQR.js`, and nothing else | `sha256sum -c build/checksums.txt` |
+| Committed to this repository | `src/web/jsQR.js` and `src/web/mp4-muxer.js`, and nothing else | `sha256sum -c build/checksums.txt` |
 | Fetched at deploy time | The Pyodide runtime and the compiled wheels it loads | `./build/fetch-assets.sh --check` |
 | Built into `seedsigner-stock.zip` | SeedSigner and its pure-Python dependencies | `./build/build-firmware-zip.sh`, then compare the sha256 |
 
@@ -46,6 +46,26 @@ This is the camera seam. Upstream SeedSigner decodes QR codes with `pyzbar`,
 which binds the C library libzbar and therefore cannot exist in this
 environment; jsQR does the decoding in JavaScript instead and hands the result
 to the firmware through `src/shims/browser_camera.py`.
+
+### mp4-muxer 5.2.2, MIT
+
+* File: `src/web/mp4-muxer.js`
+* Source: npm `mp4-muxer@5.2.2`, the file published as `package/build/mp4-muxer.js`
+* sha256: `cc4d30bd20b9ffe0b15f59cf0de3e1930626ccd46a5146e36e4d619d7fecf63d`
+* Upstream: https://github.com/Vanilagy/mp4-muxer
+
+Unmodified. Confirm it independently, rather than just against
+`build/checksums.txt`:
+
+```
+curl -sL https://registry.npmjs.org/mp4-muxer/-/mp4-muxer-5.2.2.tgz \
+  | tar xzO package/build/mp4-muxer.js | sha256sum
+```
+
+Used only by the Record button. The browser encodes H.264 with WebCodecs, and
+this writes the encoded frames into an MP4 container, which no browser API does
+everywhere (MediaRecorder writes WebM in Firefox). It never sees the firmware or
+a key press, only the pixels of frames already on the page.
 
 ---
 

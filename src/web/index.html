@@ -8,6 +8,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="theme-color" content="#07111f">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="SeedSigner">
 <style>
@@ -34,8 +35,10 @@
     display: flex; flex-wrap: wrap; align-items: center;
     justify-content: center; gap: .5rem;
   }
-  #network-line { display: flex; align-items: center; justify-content: center; }
-  #network-line:has(#network:empty) { display: none; }
+  #network-line {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: .75rem;
+  }
+  #network:empty { display: none; }
   #network {
     margin: 0; font-size: .68rem; letter-spacing: .06em;
     text-transform: uppercase; color: #656c76;
@@ -221,8 +224,47 @@
   @media (max-width: 46rem), (max-height: 30rem) {
     body.touch #fullscreen { display: inline-flex; }
   }
+  #rec { display: none; flex: none; align-items: center; gap: .35rem; }
+  #rec.offered { display: inline-flex; }
+  #rec-go, .seg button {
+    display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
+    min-height: 2.6rem; font: inherit; font-size: .82em; color: #8b939e;
+    background: #1d2026; border: 1px solid #2a2e35; border-radius: 5px;
+    padding: .35rem .6rem; cursor: pointer;
+  }
+  #rec-go:hover:not(:disabled), .seg button:hover:not(:disabled) {
+    color: #d7dbe0; border-color: #3a3f47;
+  }
+  #rec-go:focus-visible, .seg button:focus-visible { outline: 2px solid #f7931a; outline-offset: 2px; }
+  #rec-go:disabled, .seg button:disabled { cursor: default; opacity: .5; }
+  /* Two buttons joined into one switch, the pressed one lit. */
+  .seg { display: inline-flex; }
+  .seg button { border-radius: 0; }
+  .seg button:first-child { border-radius: 5px 0 0 5px; }
+  .seg button:last-child { border-radius: 0 5px 5px 0; border-left: 0; }
+  .seg button[aria-pressed=true] { color: #f7931a; border-color: #f7931a; background: #16181c; }
+  .seg button:last-child[aria-pressed=true] { border-left: 1px solid #f7931a; margin-left: -1px; }
+  #display-size button { min-height: 2.2rem; font-variant-numeric: tabular-nums; }
+  #rec-go::before {
+    content: ""; width: .7em; height: .7em; border-radius: 50%;
+    background: currentColor; flex: none;
+  }
+  #rec #rec-go[aria-pressed=true] { color: #ef4444; border-color: #7f1d1d; background: #1b0f10; }
+  #rec-go[aria-pressed=true]::before { border-radius: 2px; }
+  #rec-time { font-variant-numeric: tabular-nums; min-width: 4.5ch; text-align: left; }
+  #rec-time:empty { display: none; }
+  #record-hint {
+    margin: 0 auto; max-width: 44ch; color: #ef4444;
+    font-size: .85em; text-align: center;
+  }
+  #record-hint:empty { display: none; }
+  /* No room beside the warning on a phone: Rec alone, recording the framing the
+     URL asks for, the device unless it says ?record=screen. */
+  @media (max-width: 30rem) {
+    #rec-mode { display: none; }
+  }
   body.solo { overflow: hidden; }
-  body.solo #about { display: none; }
+  body.solo #about, body.solo #rec, body.solo #display-size { display: none; }
   body.solo #stage-device { position: static; z-index: auto; background: none; }
   body.solo #device-band { z-index: auto; }
   body.solo::before { content: ""; position: fixed; inset: 0; z-index: 49; background: #0b0c0e; }
@@ -315,7 +357,8 @@
         and never inside it:</p>
         <ul>
           <li><strong>Display:</strong> the device's own driver renders the
-          frames; the page paints them at 320&times;240, pixel for pixel.</li>
+          frames; the page paints them at the panel's own size, 320&times;240 or
+          240&times;240, pixel for pixel.</li>
           <li><strong>Buttons:</strong> the worker is blocked inside the firmware's
           main loop, so keys cross on a SharedArrayBuffer.</li>
           <li><strong>Camera:</strong> your webcam. pyzbar has no WebAssembly
@@ -325,6 +368,17 @@
 
         <p><strong>Driving it.</strong> Press the drawn buttons, or the
         keyboard: arrows move, Enter selects, 1 to 3 are the side buttons.</p>
+
+        <p><strong>Two devices.</strong> The switch under the device picks the
+        hardware: the SeedSigner Plus with its 320&times;240 screen, or the
+        original build on a Waveshare 1.3" hat at 240&times;240.
+        Switching starts the firmware again.</p>
+
+        <p><strong>Recording it.</strong> Record saves an MP4 of the session,
+        either the firmware's screen alone at its own size or the
+        whole device. The video is made in this browser from the firmware's
+        frames, not by filming the page, so the pointer is never in it, and
+        nothing is uploaded anywhere.</p>
       </div>
     </details>
     <button type="button" id="fullscreen" aria-pressed="false">
@@ -336,6 +390,17 @@
       </svg>
       <span id="fullscreen-label" class="offscreen">Fill the screen</span>
     </button>
+    <div id="rec">
+      <span id="rec-mode" class="seg" role="group" aria-label="What to record">
+        <button type="button" data-mode="screen" aria-pressed="false"
+                title="Record the screen alone, 320×240">Screen</button>
+        <button type="button" data-mode="device" aria-pressed="true"
+                title="Record the whole device">Device</button>
+      </span>
+      <button type="button" id="rec-go" aria-pressed="false" title="Start recording">
+        <span id="rec-label">Rec</span><span id="rec-time"></span>
+      </button>
+    </div>
   </div>
   <div id="stage">
     <div id="stage-device">
@@ -352,7 +417,14 @@
         </div>
       </div>
       <p id="camera-hint"></p>
+      <p id="record-hint"></p>
       <div id="network-line">
+        <span id="display-size" class="seg" role="group" aria-label="Which device">
+          <button type="button" data-display="320x240"
+                  title="SeedSigner Plus, 320×240 screen">320×240</button>
+          <button type="button" data-display="240x240"
+                  title="Waveshare 1.3&quot; hat, 240×240 screen">240×240</button>
+        </span>
         <p id="network"></p>
       </div>
     </div>
@@ -360,6 +432,8 @@
 
 <script src="seedsigner-device.js"></script>
 <script src="camera.js"></script>
+<script src="mp4-muxer.js"></script>
+<script src="recorder.js"></script>
 <script>
 if ("serviceWorker" in navigator) {
   addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
@@ -368,8 +442,14 @@ if ("serviceWorker" in navigator) {
 // ?debug=1 puts the firmware's narration on the console, which is what the tests read.
 const DEBUG = new URLSearchParams(location.search).has("debug");
 const BITCOIN_NETWORK = new URLSearchParams(location.search).get("network") === "mainnet" ? "M" : "T";
+// Which hardware: the SeedSigner Plus's 320x240, or the original Waveshare hat's
+// 240x240. The firmware lays every screen out for its panel at boot, so this is
+// read once and changing it means starting the firmware again.
+const DISPLAY = new URLSearchParams(location.search).get("display") === "240x240"
+  ? "240x240" : "320x240";
 
-let W = 320, H = 240;  // corrected by the worker once the renderer exists
+// Corrected by the worker once the renderer exists.
+let W = DISPLAY === "240x240" ? 240 : 320, H = 240;
 const canvas = document.getElementById("screen");
 const deviceEl = document.getElementById("device");
 const ctx = canvas.getContext("2d");
@@ -533,7 +613,7 @@ function mountDevice(width, height) {
   deviceScreen = size;
   const device = SeedSignerDevice.render(deviceEl, {
     screenWidth: width, screenHeight: height, interactive: true, onKey: sendKey,
-    maxWidth: "68rem",   // ~1.45x the native 320x240 in the cutout
+    maxWidth: "68rem",   // ~1.1x the native 320x240 in the Plus's cutout
   });
   device.screen.appendChild(canvas);
   // The loading state rides on the screen, except once it has failed: the
@@ -556,8 +636,10 @@ function paint(bytes) {
     frame.data[dst + 3] = 255;
   }
   ctx.putImageData(frame, 0, 0);
+  if (recording) recording.frame();
 }
 
+canvas.width = W; canvas.height = H;
 mountDevice(W, H);
 
 // Fullscreen: the device alone, laid along the viewport's longer side so its
@@ -606,6 +688,138 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") setSolo(false);
 });
 
+// Recording: an MP4 of the screen alone or of the whole device, composed from the
+// firmware's frames by recorder.js rather than filmed off the page, so the
+// pointer is never in it. Offered once the firmware is drawing and the browser
+// has been asked whether it can encode one; the choice of framing rides in the
+// URL, like ?network does.
+const recBox = document.getElementById("rec");
+const recGo = document.getElementById("rec-go");
+const recLabel = document.getElementById("rec-label");
+const recTime = document.getElementById("rec-time");
+const recModeButtons = document.querySelectorAll("#rec-mode button");
+const recordHint = document.getElementById("record-hint");
+let recordMode = new URLSearchParams(location.search).get("record") === "screen"
+  ? "screen" : "device";
+let recording = null;     // the recording in progress, once it has started
+let recBusy = false;      // starting or finishing, when the button must wait
+let recFrom = 0, recTick = 0;
+
+function showRecordMode() {
+  for (const button of recModeButtons) {
+    button.setAttribute("aria-pressed", String(button.dataset.mode === recordMode));
+  }
+}
+showRecordMode();
+
+// Asked of the shell that is up, since the two devices film at different sizes.
+function offerRecording() {
+  if (!ISOLATED || !window.SimRecorder || !shell) return;
+  SimRecorder.supported(shell.width, shell.height)
+    .then((ok) => { if (ok) recBox.classList.add("offered"); }, () => {});
+}
+
+for (const button of recModeButtons) {
+  button.addEventListener("click", () => {
+    recordMode = button.dataset.mode;
+    showRecordMode();
+    const url = new URL(location.href);
+    url.searchParams.set("record", recordMode);
+    history.replaceState(history.state, "", url);
+    button.blur();
+  });
+}
+
+function showRecording() {
+  const on = !!recording;
+  recGo.setAttribute("aria-pressed", String(on));
+  recGo.disabled = recBusy;
+  recLabel.textContent = recBusy ? (on ? "Saving" : "Starting") : on ? "Stop" : "Rec";
+  recGo.title = on ? "Stop recording and save the MP4" : "Start recording";
+  for (const button of recModeButtons) button.disabled = on || recBusy;
+  clearInterval(recTick);
+  recTick = 0;
+  if (on) {
+    const tick = () => { recTime.textContent = elapsedText(performance.now() - recFrom); };
+    tick();
+    recTick = setInterval(tick, 200);
+  } else {
+    recTime.textContent = "";
+  }
+}
+
+function recordingName(mode) {
+  const d = new Date(), two = (v) => String(v).padStart(2, "0");
+  return `seedsigner-${mode}-${d.getFullYear()}${two(d.getMonth() + 1)}${two(d.getDate())}`
+       + `-${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}.mp4`;
+}
+
+function saveRecording(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+function recordingFailed(message) {
+  recording = null;
+  recBusy = false;
+  recordHint.textContent = "recording stopped: " + message;
+  showRecording();
+}
+
+recGo.addEventListener("click", () => {
+  recGo.blur();
+  if (recBusy) return;
+  recordHint.textContent = "";
+  if (!recording) {
+    recBusy = true;
+    showRecording();
+    SimRecorder.start({
+      mode: recordMode, screen: canvas, device: () => shell,
+      onError: recordingFailed,
+    }).then((started) => {
+      recording = started;
+      recFrom = performance.now();
+      recBusy = false;
+      showRecording();
+    }, (error) => recordingFailed(error.message));
+    return;
+  }
+  const finishing = recording;
+  recBusy = true;
+  showRecording();
+  finishing.stop().then((blob) => {
+    recording = null;
+    recBusy = false;
+    showRecording();
+    saveRecording(blob, recordingName(finishing.mode));
+  }, (error) => recordingFailed(error.message));
+});
+
+// Which device: the firmware lays its screens out for the panel at boot, so the
+// other size means starting it again, and whatever this session had loaded goes
+// with it. Asked first, then the page reloads with ?display, keeping the rest.
+const displayButtons = document.querySelectorAll("#display-size button");
+for (const button of displayButtons) {
+  button.setAttribute("aria-pressed", String(button.dataset.display === DISPLAY));
+  button.addEventListener("click", () => {
+    button.blur();
+    const wanted = button.dataset.display;
+    if (wanted === DISPLAY) return;
+    const ok = confirm(`Switch to the ${wanted.replace("x", "×")} device? The firmware `
+                     + "restarts, and anything loaded in this session is lost.");
+    if (!ok) return;
+    const url = new URL(location.href);
+    url.searchParams.set("display", wanted);
+    location.assign(url);
+  });
+}
+
 function cameraSource() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     // getUserMedia is missing rather than merely refused when the page is not a
@@ -633,6 +847,7 @@ function startSimulator() {
       if (statusEl.className !== "ready") {
         statusEl.textContent = "";
         statusEl.className = "ready";
+        offerRecording();
       }
     } else if (type === "log") {
       console.log("[py] " + event.data.message);
@@ -641,6 +856,7 @@ function startSimulator() {
     } else if (type === "ready") {
       statusEl.textContent = "";
       statusEl.className = "ready";
+      offerRecording();
     } else if (type === "zip-sha256") {
       receivedHash = event.data.sha256;
       showVerdict();

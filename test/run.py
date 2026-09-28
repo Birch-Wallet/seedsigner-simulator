@@ -37,6 +37,7 @@ PY = sys.executable
 SUITE = [
     ("leak_scan", ["leak_scan.py"], False),
     ("device", ["test_device.py"], True),
+    ("record", ["test_record.py"], True),
     ("build_info", ["test_build_info.py"], True),
     ("settings", ["test_settings.py"], True),
     ("scan_seedqr", ["test_scan.py"], True),

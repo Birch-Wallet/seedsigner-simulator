@@ -41,6 +41,11 @@
 # that it matches the src/web/jsQR.js line below:
 #
 #     curl -sL https://registry.npmjs.org/jsqr/-/jsqr-1.4.0.tgz | tar xzO package/dist/jsQR.js | sha256sum
+#
+# mp4-muxer 5.2.2, MIT, is the file published as build/mp4-muxer.js in the npm
+# package mp4-muxer@5.2.2, unmodified. Likewise:
+#
+#     curl -sL https://registry.npmjs.org/mp4-muxer/-/mp4-muxer-5.2.2.tgz | tar xzO package/build/mp4-muxer.js | sha256sum
 
 2ba735911f1dfdfbcdab028925569de35e0cd785cabb15ac002be436d4fcf324  src/shims/browser_camera.py
 d35ca8a3d833eb5ab9dc08a9b04199203067bc8f3a14289563f484c0e4b35bac  src/shims/browser_display.py
@@ -49,12 +54,14 @@ ea1ccb248642fe814a183bfe4e189b12c18e84830cfa0a7629595bfe37c63675  src/shims/brow
 40f5bf72bd058753626e0a6728a9e9e87317c7f09c3b7e7de56c26e5c0c9f4f8  src/web/camera.js
 1ebb8267bb112587c9739a7f30fd9197c3e0137a0fcd4677f6a8677b6fa307f5  src/web/icon-192.png
 2c740b578143c67bbca1f950c33fe62d2a06fd22d5c0a7adf58348dc648e09bf  src/web/icon-512.png
-50660506778a36c47366f362c7165cc494510fe980a40ecf4e1e7e3693c093fc  src/web/index.html
+88c93d56e389cc610eec05b02cbc9ead9154bcd2ed53500860b264b00eab61c4  src/web/index.html
 bc40c8a15196236b2314db0856f72ca0b49980cd5413b8c852a7349f5fee0859  src/web/jsQR.js
 4bcc8909e9a11cd83770136548614956ad48603254a4d25c184baa538877a648  src/web/manifest.json
-5138aad62cec73e96fd63b394d04f785db7e2ab8df568da65a55e0478c8b099f  src/web/seedsigner-device.js
-5c73b8b1a9554081944172d2a0c1980bd28b9f24e0483eaf8daf6c4c34b09816  src/web/sw.js
-6006ba1f9d578f266b151c2fab66995bb6aae32f4aa2d12a646cb2fd9b6b82d4  src/web/worker.js
+cc4d30bd20b9ffe0b15f59cf0de3e1930626ccd46a5146e36e4d619d7fecf63d  src/web/mp4-muxer.js
+7ae156dcec916b86f4e6025559c559ac0ded9efd60d6f18eac4141dd35b2e84b  src/web/recorder.js
+a6d5cbbf43f68d3ac5ba5bb907c0369fa368e88e3402461f7577503144b78593  src/web/seedsigner-device.js
+2898c6380ad944e00a24c28dac53a16423d23d9f4daf94e7025b632fc93307c0  src/web/sw.js
+0d8f656366e1d172066d38f089beda295c1b30cf6a11336f2c610deb36c27498  src/web/worker.js
 
 # The stand-in packages, which build/build-firmware-zip.sh copies out of the working
 # tree and into a firmware zip whole. Every other input to that zip is pinned by a

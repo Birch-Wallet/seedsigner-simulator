@@ -35,6 +35,8 @@ const SHELL = [
   "./camera.js",
   "./seedsigner-device.js",
   "./jsQR.js",
+  "./mp4-muxer.js",
+  "./recorder.js",
   "./browser_camera.py",
   "./browser_qr.py",
   "./browser_display.py",

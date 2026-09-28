@@ -28,7 +28,7 @@ everything against it, and stops the server afterwards. The first run also
 downloads the Pyodide runtime and builds the firmware zip from its pinned upstream
 commit, which takes a few minutes; later runs reuse all of it.
 
-A subset, by substring on the step name -- the names are `leak_scan`, `device`,
+A subset, by substring on the step name -- the names are `leak_scan`, `device`, `record`,
 `build_info`, `settings`, `scan_seedqr`, `scan_compact`, `scan_native`,
 `camera_stall`, `passphrase`, `image_entropy`, `mainnet`:
 

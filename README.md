@@ -16,6 +16,8 @@ it, and nothing else.
 
 ![The simulator running the firmware's home screen](docs/img/device.png)
 
+![The same home screen on the original 240×240 build](docs/img/device-240x240.png)
+
 ## Why it cannot be made safe
 
 A SeedSigner is a signing device because of what surrounds the software. None of
@@ -97,7 +99,12 @@ needs editing too.
 ## What works, and what does not
 
 **Works.** The full menu tree, seed loading by QR or by hand, passphrases, xpub
-export, PSBT signing, SeedQR backup, settings, every QR screen.
+export, PSBT signing, SeedQR backup, settings, every QR screen. Both screens the
+firmware drives: the SeedSigner Plus at 320×240, or the original Waveshare hat at
+240×240 (the switch under the device, or `?display=240x240`).
+**Rec** saves an MP4 of the session, the screen alone at its own size or the
+whole device, composed from the firmware's frames in the browser, so the pointer
+is never in it.
 
 **Does not.** No microSD, so settings reset on reload and firmware update is gone.
 Nothing on a background thread: no spinner, no scrolling text, no pulsing border
@@ -158,7 +165,8 @@ Two rules keep the "it is the real firmware" claim true:
 MIT, see [LICENSE](LICENSE). Almost none of this code was written here: the
 firmware is upstream [SeedSigner](https://github.com/SeedSigner/seedsigner) (MIT,
 Copyright (c) 2021 SeedSigner), and the browser side rests on
-[Pyodide](https://pyodide.org) and [jsQR](https://github.com/cozmo/jsQR).
+[Pyodide](https://pyodide.org), [jsQR](https://github.com/cozmo/jsQR) and
+[mp4-muxer](https://github.com/Vanilagy/mp4-muxer).
 [THIRD-PARTY.md](THIRD-PARTY.md) lists every dependency and how to check it.
 
 Forked from [bitsagarob/seedsigner-simulator](https://github.com/bitsagarob/seedsigner-simulator)

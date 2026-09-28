@@ -163,6 +163,11 @@ HEADER
 # that it matches the src/web/jsQR.js line below:
 #
 #     curl -sL https://registry.npmjs.org/jsqr/-/jsqr-1.4.0.tgz | tar xzO package/dist/jsQR.js | sha256sum
+#
+# mp4-muxer 5.2.2, MIT, is the file published as build/mp4-muxer.js in the npm
+# package mp4-muxer@5.2.2, unmodified. Likewise:
+#
+#     curl -sL https://registry.npmjs.org/mp4-muxer/-/mp4-muxer-5.2.2.tgz | tar xzO package/build/mp4-muxer.js | sha256sum
 
 SERVED
     hash_lines "${SERVED_DIRS}"

@@ -186,7 +186,9 @@ sys.path.insert(0, "/firmware")
 # SeedSigner OS, so both of these are configuration, the way a configured device
 # would have them, and nothing under seedsigner/ is touched to get them.
 #
-#   display_config  the SeedSigner Plus panel, which is the screen drawn here.
+#   display_config  the panel the page asked for with ?display: the SeedSigner
+#                   Plus's 320x240, or the original Waveshare 1.3" hat's 240x240,
+#                   which is SeedSigner's own default.
 #   network         Mainnet when the page asks for ?network=mainnet; otherwise
 #                   testnet. Still changeable in Settings on hardware.
 #
@@ -194,7 +196,9 @@ sys.path.insert(0, "/firmware")
 # SETTING__NETWORK and TESTNET.
 import os, json
 os.chdir("/firmware")
-_settings = {"display_config": "st7789_320x240", "network": ${net}}
+_settings = {"display_config": ${JSON.stringify(width === 240 && height === 240
+                                              ? "st7789_240x240" : "st7789_320x240")},
+             "network": ${net}}
 with open("/firmware/settings.json", "w") as handle:
     json.dump(_settings, handle)
 

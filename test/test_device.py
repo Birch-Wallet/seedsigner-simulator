@@ -164,6 +164,31 @@ def main() -> int:
               presses(page) == [5], str(presses(page)))
         page.evaluate("() => document.getElementById('probe').remove()")
 
+        # --- the 240x240 hat ------------------------------------------------
+        # A square screen is the Waveshare hat's case, with the same eight keys
+        # as the Plus. Each has to be exactly one press of its own, and the
+        # screen still none.
+        page.evaluate(PROBE.replace("screenWidth: 320", "screenWidth: 240")
+                           .replace("width:340px", "width:360px"))
+        slot = page.locator("#probe .ssd-screen-slot").bounding_box()
+        check("the hat's screen is square",
+              abs(slot["width"] / slot["height"] - 1) < 0.02,
+              f"{slot['width']:.1f}x{slot['height']:.1f}")
+        page.touchscreen.tap(slot["x"] + slot["width"] / 2, slot["y"] + slot["height"] / 2)
+        page.wait_for_timeout(200)
+        check("and a tap on it is nothing", presses(page) == [], str(presses(page)))
+        check("the hat has the Plus's eight keys",
+              page.locator("#probe [data-ssd-channel]").count() == 8)
+        for control, channel in (("select", 5), ("up", 1), ("right", 4), ("down", 2),
+                                 ("left", 3), ("key1", 6), ("key2", 7), ("key3", 8)):
+            page.evaluate("() => { window.__presses.length = 0; }")
+            x, y = centre(page, f"#probe [data-ssd-control={control}]")
+            page.touchscreen.tap(x, y)
+            page.wait_for_timeout(250)
+            check(f"a tap on the hat's {control} is exactly one {control} press",
+                  presses(page) == [channel], str(presses(page)))
+        page.evaluate("() => document.getElementById('probe').remove()")
+
         # --- the shell filling the screen -------------------------------------
         def key_size():
             box = page.locator("#device [data-ssd-control=select]").bounding_box()
@@ -242,6 +267,34 @@ def main() -> int:
         check("nothing about it is offered on a desktop, which has the room",
               not page.locator("#fullscreen").is_visible())
         check("no page errors", not errors, "; ".join(errors[:3]))
+
+        # --- the 240x240 hat filling a sideways phone -------------------------
+        # The same shell and keys as the Plus's, around a narrower screen, and
+        # its keys have to come out as thumb targets with room between them too.
+        hat = context.new_page()
+        hat.set_viewport_size(PHONE_SIDEWAYS)
+        hat.goto(harness.sim_url(display="240x240"))
+        hat.wait_for_selector("#device .ssd-svg")
+        hat.wait_for_timeout(600)
+        check("a sideways phone fills the screen with the hat too",
+              hat.evaluate("() => document.body.classList.contains('solo')"))
+
+        def box(name):
+            return hat.locator(f"#device [data-ssd-control={name}]").bounding_box()
+
+        sizes = {name: min(box(name)["width"], box(name)["height"])
+                 for name in ("select", "key1", "key2", "key3")}
+        check("the hat's select and side keys are thumb sized",
+              min(sizes.values()) >= 44,
+              ", ".join(f"{k} {v:.0f}px" for k, v in sizes.items()))
+        # Room between them, so a thumb on one is not on the next.
+        gaps = [box("key2")["y"] - (box("key1")["y"] + box("key1")["height"]),
+                box("right")["x"] - (box("select")["x"] + box("select")["width"]),
+                box("select")["y"] - (box("up")["y"] + box("up")["height"])]
+        check("with clear space between neighbouring keys",
+              min(gaps) >= 12, ", ".join(f"{g:.0f}px" for g in gaps))
+        hat.screenshot(path=harness.artifact("device-hat-sideways-fullscreen.png"))
+        hat.close()
 
         browser.close()
 

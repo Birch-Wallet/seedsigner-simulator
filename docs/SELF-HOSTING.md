@@ -116,8 +116,8 @@ cp build/out/seedsigner-stock.zip build/out/seedsigner-stock.build-info.json "$d
 | In the served root | From | Notes |
 | --- | --- | --- |
 | `index.html` | `src/web/` | the simulator |
-| `worker.js`, `camera.js`, `seedsigner-device.js` | `src/web/` | |
-| `jsQR.js` | `src/web/` | must be same-origin; a CDN is refused by both COEP and the page's CSP |
+| `worker.js`, `camera.js`, `seedsigner-device.js`, `recorder.js` | `src/web/` | |
+| `jsQR.js`, `mp4-muxer.js` | `src/web/` | must be same-origin; a CDN is refused by both COEP and the page's CSP. `mp4-muxer.js` is only the Record button, which stays hidden without it |
 | `sw.js`, `manifest.json`, `icon-*.png`, `apple-touch-icon.png` | `src/web/` | offline cache and PWA install; optional, the firmware runs without them |
 | `pyodide-e24b45d3/` | `fetch-assets.sh` | ~26 MB: the runtime plus the wheels for Pillow and pycryptodome |
 | `browser_display.py`, `browser_camera.py`, `browser_qr.py` | `src/shims/` | fetched at boot and written into Pyodide's filesystem |
