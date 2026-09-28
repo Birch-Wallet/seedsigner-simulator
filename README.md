@@ -71,7 +71,7 @@ involving money belongs on hardware.
 ```sh
 git clone https://github.com/newtonick/seedsigner-simulator.git
 cd seedsigner-simulator
-./build/fetch-assets.sh          # Pyodide, pinned and hash-checked (~26 MB, once)
+./build/fetch-assets.sh          # Pyodide and zxing-wasm, pinned and hash-checked (~27 MB, once)
 ./build/build-firmware-zip.sh      # seedsigner-stock.zip, from the pinned commit
 python3 test/serve.py --port 8770 src/web src/shims build/out
 ```
@@ -199,7 +199,8 @@ Two rules keep the "it is the real firmware" claim true:
 MIT, see [LICENSE](LICENSE). Almost none of this code was written here: the
 firmware is upstream [SeedSigner](https://github.com/SeedSigner/seedsigner) (MIT,
 Copyright (c) 2021 SeedSigner), and the browser side rests on
-[Pyodide](https://pyodide.org), [jsQR](https://github.com/cozmo/jsQR) and
+[Pyodide](https://pyodide.org), [jsQR](https://github.com/cozmo/jsQR),
+[zxing-wasm](https://github.com/Sec-ant/zxing-wasm) and
 [mp4-muxer](https://github.com/Vanilagy/mp4-muxer).
 [THIRD-PARTY.md](THIRD-PARTY.md) lists every dependency and how to check it.
 

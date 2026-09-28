@@ -52,7 +52,7 @@ blob and firmware you are being asked to trust are both things better fetched an
 verified than committed.
 
 ```sh
-./build/fetch-assets.sh          # Pyodide 0.26.4 -> src/web/pyodide-e24b45d3/, sha256-checked
+./build/fetch-assets.sh          # Pyodide 0.26.4 -> src/web/pyodide-e24b45d3/, zxing-wasm 3.1.4 -> src/web/zxing-2416232a/, sha256-checked
 ./build/build-firmware-zip.sh      # -> build/out/seedsigner-stock.zip, from the pinned commit
 ```
 
@@ -108,7 +108,7 @@ path, so everything sits side by side:
 ```sh
 dest=/srv/seedsigner-simulator
 mkdir -p "$dest"
-cp -R src/web/. "$dest/"          # the page, its scripts, icons and pyodide-e24b45d3/
+cp -R src/web/. "$dest/"          # the page, its scripts, icons, pyodide-e24b45d3/ and zxing-2416232a/
 cp src/shims/*.py "$dest/"
 cp build/out/seedsigner-stock.zip build/out/seedsigner-stock.build-info.json "$dest/"
 ```
@@ -120,8 +120,9 @@ cp build/out/seedsigner-stock.zip build/out/seedsigner-stock.build-info.json "$d
 | `jsQR.js`, `mp4-muxer.js` | `src/web/` | must be same-origin; a CDN is refused by both COEP and the page's CSP. `mp4-muxer.js` is only the Record button, which stays hidden without it |
 | `sw.js`, `manifest.json`, `icon-*.png`, `apple-touch-icon.png` | `src/web/` | offline cache and PWA install; optional, the firmware runs without them |
 | `og-image.png` | `src/web/` | the 1200×630 preview a shared link shows; optional. The Open Graph and Twitter tags in `index.html` point at it by absolute URL on `seedsigner.birchwallet.app`, since link scrapers want absolute URLs, so a copy hosted elsewhere changes those `og:`/`twitter:` URLs and the canonical link to its own address. `build/make-og-image.py` regenerates it from the running simulator (design in `build/og-image/`); it is a step a person runs when the picture should change, never part of a build |
-| `licenses/` | `src/web/` | the third-party notices and licence texts, linked from the page's **i** panel. Not optional: jsQR's, mp4-muxer's and Pyodide's licences each require that whoever receives the files gets their licence with them, and on a website that is the visitor |
+| `licenses/` | `src/web/` | the third-party notices and licence texts, linked from the page's **i** panel. Not optional: jsQR's, zxing-wasm's, mp4-muxer's and Pyodide's licences each require that whoever receives the files gets their licence with them, and on a website that is the visitor |
 | `pyodide-e24b45d3/` | `fetch-assets.sh` | ~26 MB: the runtime plus the wheels for Pillow and pycryptodome |
+| `zxing-2416232a/` | `fetch-assets.sh` | ~1 MB: the QR decoder, in every browser. Without it the page still scans, with jsQR, but slower to lock on, and in a browser with no `BarcodeDetector` (Safari, every browser on an iPhone, Chrome on Windows and Linux) it can take many seconds. Same-origin for the same reasons as jsQR, and, like Pyodide, it wants `.wasm` served as `application/wasm` |
 | `browser_display.py`, `browser_camera.py`, `browser_threads.py` | `src/shims/` | fetched at boot and written into Pyodide's filesystem |
 | `seedsigner-stock.zip` | `build/out/` | the pinned `seedsigner` tree plus its pure-Python dependencies plus this repository's stand-in packages |
 | `seedsigner-stock.build-info.json` | `build/out/` | what the build is: pin, tag, published hashes, dependency versions. The page's **i** panel is filled from it, and says it cannot describe the build if it is missing |

@@ -16,6 +16,7 @@ seed, use a published BIP39 test vector.
 - Hosted page, or your own checkout?
 - Browser and version:
 - If it involves scanning: which decoder? Load the page with `?debug=1` and the
-  console reports either `jsQR` or `BarcodeDetector+jsQR`.
+  console reports `zxing-wasm`, or `BarcodeDetector+jsQR` or `jsQR` if it
+  could not load zxing-wasm.
 
 **Console output** with `?debug=1` appended to the URL, if there is any.

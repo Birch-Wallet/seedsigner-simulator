@@ -29,7 +29,7 @@ downloads the Pyodide runtime and builds the firmware zip from its pinned upstre
 commit, which takes a few minutes; later runs reuse all of it.
 
 A subset, by substring on the step name -- the names are `leak_scan`, `device`, `record`, `threads`, `toasts`,
-`build_info`, `settings`, `scan_seedqr`, `scan_compact`, `scan_native`,
+`build_info`, `settings`, `scan_seedqr`, `scan_compact`, `scan_jsqr`, `scan_native`,
 `camera_stall`, `passphrase`, `image_entropy`, `mainnet`:
 
     python3 test/run.py scan          # everything with "scan" in the name
@@ -52,6 +52,7 @@ they are large and regenerate in seconds; set `SIM_KEEP_VIDEOS=1` to keep them.
 | `SIM_ARTIFACT_DIR` | `test/artifacts` | screenshots and videos |
 | `SIM_ASSETS` | `build/out`, `src/web` | where `seedsigner-stock.zip` and the Pyodide runtime are |
 | `QR_KIND` | `qr` | which QR `test_scan.py` holds up: `qr` or `qr-compact` |
+| `SCAN_DECODER` | `zxing-wasm` | which decoder `test_scan.py` requires the page to pick: `zxing-wasm`, or `jsQR`, for which every request for zxing-wasm is refused and `BarcodeDetector` removed |
 
 `SIM_URL` is the useful one: point it at a deployed copy and the same tests prove
 the page that is actually serving people decodes a QR, rather than that its files
@@ -157,14 +158,19 @@ warning grow its mainnet half. The **i** panel is opened too, and must name no
 outside origin the page talks to, because there is none.
 
 **`test_scan.py`**: the whole scan path against Chromium's fake camera, run
-twice. `qr.y4m` is the digit-based SeedQR; `qr-compact.y4m` is the raw-bytes
-CompactSeedQR, which is the case that breaks first if any layer decides a payload
-is text. Both encode the same seed, so both must reach `SeedFinalizeScreen` on
-the same fingerprint. Both videos open on blank frames, and the test asserts
-nothing is decoded during them.
+three times. `qr.y4m` is the digit-based SeedQR; `qr-compact.y4m` is the
+raw-bytes CompactSeedQR, which is the case that breaks first if any layer decides
+a payload is text. Both are read with zxing-wasm, the default, with
+`test_scan_native.py`'s lying `BarcodeDetector` installed, which must never be
+asked. The CompactSeedQR is read once more with jsQR (`scan_jsqr`), with
+zxing-wasm refused and no `BarcodeDetector`: a copy served without zxing-wasm,
+in Safari or Chrome on Windows and Linux. All encode the same seed, so all must
+reach `SeedFinalizeScreen` on the same fingerprint. Both videos open on blank
+frames, and the test asserts nothing is decoded during them.
 
-**`test_scan_native.py`**: the `BarcodeDetector` branch, which the plain scan
-test never reaches because desktop Chromium ships no Shape Detection API. A stub
+**`test_scan_native.py`**: the `BarcodeDetector` branch, the fallback when
+zxing-wasm cannot be loaded in a browser that has a native detector. zxing-wasm
+is refused, and a stub
 detector is installed before any page script runs, and it always claims a QR and
 always returns rubbish for `rawValue`, which is not artificial, since a real
 `BarcodeDetector` handed a CompactSeedQR returns mojibake either way.
@@ -191,9 +197,9 @@ single-frame path was once never shimmed and fell through to the real
 back, and requires that nothing raised on the way.
 
 **`run.py`'s `same_seed` step**: after the scan tests, the screen each of the
-three scan runs ended on is compared with the other two, and then with a
-committed baseline. One seed, encoded three ways and read down two different
-decoder paths, must end on one rendered fingerprint.
+four scan runs ended on is compared with the others, and then with a committed
+baseline. One seed, in both encodings and read down three different decoder
+paths, must end on one rendered fingerprint.
 
 What is compared is `scan-screen-*.png`: the 320x240 canvas SeedSigner's own
 renderer drew, read back out of the canvas rather than photographed, and it is
@@ -203,7 +209,7 @@ can encode the same canvas into a different PNG. The whole-page
 when this fails, but they are not what is asserted on: they also hold the page
 around the device, drawn with whatever fonts the machine has.
 
-Agreeing with each other is not enough; three runs of firmware that derived the
+Agreeing with each other is not enough; four runs of firmware that derived the
 seed wrongly would agree perfectly. The anchor is a committed capture of
 `SeedFinalizeScreen` showing the BIP39 test vector's master fingerprint
 `b2269592`, committed as a picture rather than a digest so that it can be

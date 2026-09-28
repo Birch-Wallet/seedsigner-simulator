@@ -82,9 +82,9 @@ fi
 # copied whole into the firmware zip by build/build-firmware-zip.sh, so a file added
 # to it changes that zip's hash.
 #
-# Excluded: src/web/pyodide-e24b45d3, which is 26 MB of fetched runtime that
-# build/fetch-assets.sh hash-checks where it fetches it and .gitignore keeps out
-# of the repository, and __pycache__, which is generated and which the build
+# Excluded: src/web/pyodide-e24b45d3 and src/web/zxing-2416232a, which are
+# fetched WebAssembly that build/fetch-assets.sh hash-checks where it fetches it
+# and .gitignore keeps out of the repository, and __pycache__, which is generated and which the build
 # refuses to package anyway.
 
 
@@ -98,6 +98,7 @@ list_dirs() {
         find "${ROOT}/${dir}" \
              -name '__pycache__' -prune -o \
              -path "${ROOT}/src/web/pyodide-e24b45d3" -prune -o \
+             -path "${ROOT}/src/web/zxing-2416232a" -prune -o \
              -type f ! -name '*.pyc' -print
     done | while IFS= read -r file; do
         printf '%s\n' "${file#"${ROOT}/"}"

@@ -158,7 +158,8 @@ Two things are faked here, not one: the video stream, and the decode.
 The stream is easy to justify: a browser has `getUserMedia` and no picamera. The
 decode is the interesting one. SeedSigner reads QR codes with **pyzbar**, a binding
 to the zbar C library, and there is no zbar built for WebAssembly. Porting it is
-not the answer, because the browser already has a QR decoder of its own. So the
+not the answer: a browser either has a QR detector of its own, or can run
+zxing-cpp, which already is built for WebAssembly. So the
 fake sits exactly where SeedSigner reaches for hardware, and everything above it
 (`ScanScreen`, `DecodeQR`'s parsing of SeedQR, CompactSeedQR, PSBT and UR payloads,
 and every view that consumes them) runs unmodified.
@@ -192,11 +193,20 @@ the decoder with repeats of itself.
 1. The page draws the video into a 640×480 capture canvas (full size, where the QR
    is still sharp) and a 240×240 preview canvas (small, because every byte of it
    gets copied into a PIL image on the Python side).
-2. `BarcodeDetector`, if the browser has it, is asked whether there is a QR in the
-   capture at all. On almost every frame the answer is no, and native code says no
-   faster than JavaScript can.
-3. If it says yes, or if there is no `BarcodeDetector`, **jsQR** decodes the same
-   `ImageData` and returns `binaryData`: the codewords themselves, as bytes.
+2. **zxing-wasm**, zxing-cpp built for WebAssembly, decodes the capture and returns
+   `bytes`: the content exactly as encoded, with no character set applied. It does
+   this in every browser, in about a millisecond a frame, and finds a QR in a
+   cluttered scene that jsQR can hunt for in vain. It is fetched and hash-checked
+   by `build/fetch-assets.sh` rather than committed.
+3. If zxing-wasm cannot be loaded, **jsQR** takes over, and returns `binaryData`:
+   the codewords themselves, as bytes. Where the browser has `BarcodeDetector`,
+   native is asked first whether there is a QR in the capture, and where, and jsQR
+   decodes a crop around native's box before trying the whole capture. The crop
+   matters more than it looks: on the whole frame, the rest of a real scene gives
+   jsQR enough false finder patterns that it can miss a QR native sees plainly for
+   twenty seconds at a time. Without `BarcodeDetector` (Safari, so every browser on
+   an iPhone, and Chrome on Windows and Linux) jsQR decodes the whole capture:
+   slower, but still correct.
 4. Those bytes are written into the buffer and `QR_LEN` is set.
 5. In the worker, `DecodeQR.extract_qr_data` (the pyzbar call) ignores the image it
    was handed and returns whatever the page last published, as `bytes`.
@@ -210,10 +220,12 @@ matters only for the preview.
 
 ### Why `rawValue` is never trusted
 
+This is about the jsQR fallback, the only place `BarcodeDetector` is used.
 `BarcodeDetector` only ever exposes `rawValue`, a **string**. A CompactSeedQR is
 raw entropy bytes, not text, and those do not survive being decoded as characters
-and re-encoded. So the native detector is used as a gate and nothing more: jsQR,
-which returns the codewords, is the only thing allowed to produce a payload.
+and re-encoded. So the native detector is used as a gate and a pointer and
+nothing more: jsQR, which returns the codewords, is the only thing allowed to
+produce a payload. The box only decides where jsQR looks.
 
 There is deliberately no fallback to `rawValue` when jsQR comes up empty, and the
 reason is worth stating plainly. A mis-read string can still be a *plausible

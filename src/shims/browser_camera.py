@@ -2,9 +2,9 @@
 A SeedSigner camera whose frames and QR payloads both come from the browser.
 
 SeedSigner reads QR codes with pyzbar, a binding to the zbar C library, and there
-is no zbar in WASM. Porting it is not the answer, because the browser already has
-a QR decoder of its own -- BarcodeDetector where it exists, jsQR everywhere else --
-and it already owns the camera through getUserMedia. So the fake sits at the two
+is no zbar in WASM. Porting it is not the answer, because the page already decodes
+QR codes -- with zxing-wasm, or jsQR if that cannot be loaded -- and it already
+owns the camera through getUserMedia. So the fake sits at the two
 places where SeedSigner reaches for hardware, the video stream and the decode, and
 everything above them runs unmodified: ScanScreen, DecodeQR's parsing of SeedQR,
 CompactSeedQR, PSBT and UR payloads, and every view that consumes them.

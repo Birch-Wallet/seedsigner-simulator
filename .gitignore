@@ -3,6 +3,11 @@
 # read does not belong in a repository whose point is that you can read it.
 /src/web/pyodide-e24b45d3/
 
+# zxing-wasm, the page's QR decoder: a ~1 MB
+# WebAssembly binary and its loader, fetched and hash-verified by the same
+# script, and kept out for the same reason.
+/src/web/zxing-2416232a/
+
 # Build artefacts. The firmware zip is what build/build-firmware-zip.sh produces; it is
 # not a source file, and committing it would invite people to trust the copy in
 # git instead of rebuilding and comparing, which is the whole idea.

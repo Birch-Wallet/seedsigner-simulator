@@ -44,6 +44,7 @@ SUITE = [
     ("settings", ["test_settings.py"], True),
     ("scan_seedqr", ["test_scan.py"], True),
     ("scan_compact", ["test_scan.py"], True),
+    ("scan_jsqr", ["test_scan.py"], True),
     ("scan_native", ["test_scan_native.py"], True),
     ("camera_stall", ["test_camera_stall.py"], True),
     ("passphrase", ["test_passphrase.py"], True),
@@ -56,14 +57,20 @@ SUITE = [
 EXTRA_ENV = {
     "scan_seedqr": {"QR_KIND": "qr"},
     "scan_compact": {"QR_KIND": "qr-compact"},
+    # The last resort, for a copy served without zxing-wasm, in a browser with no
+    # BarcodeDetector. The CompactSeedQR, because raw bytes are what a decoder
+    # is likeliest to get wrong.
+    "scan_jsqr": {"QR_KIND": "qr-compact", "SCAN_DECODER": "jsQR"},
 }
 
 
 def ensure_assets() -> bool:
-    """The firmware zip and the Pyodide runtime, built on demand."""
+    """The firmware zip, the Pyodide runtime and zxing-wasm, built on demand."""
     wanted = [
         (harness.FIRMWARE_ZIP, ["build/build-firmware-zip.sh"]),
         (os.path.join("pyodide-e24b45d3", "pyodide.js"),
+         ["build/fetch-assets.sh"]),
+        (os.path.join("zxing-2416232a", "zxing_reader.wasm"),
          ["build/fetch-assets.sh"]),
     ]
     for name, argv in wanted:
@@ -109,9 +116,9 @@ def start_server():
     raise SystemExit(f"server never came up on port {harness.PORT}")
 
 
-# The three screens that must be the same screen. One seed, encoded three ways
-# and read down two different decoder paths, so if the firmware is honest all three
-# runs end on the same rendered fingerprint. Comparing the images turns a claim
+# The screens that must be the same screen. One seed, in both encodings, read
+# down three different decoder paths, so if the firmware is honest every run
+# ends on the same rendered fingerprint. Comparing the images turns a claim
 # somebody had to check by eye into something CI can fail on.
 #
 # What is compared is the device's own canvas -- the 320x240 SeedSigner's
@@ -130,6 +137,7 @@ BASELINE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         "baseline", "screen-b2269592.png")
 
 SAME_SEED_SCREENS = ("scan-screen-qr.png", "scan-screen-qr-compact.png",
+                     "scan-screen-qr-compact-jsqr.png",
                      "scan-screen-native-compact.png")
 
 
@@ -199,10 +207,10 @@ def same_seed() -> int:
                   "screenshots beside them show what each run was displaying")
             return 1
 
-    # Agreeing with each other is not enough. Three runs of firmware that derived
+    # Agreeing with each other is not enough. Four runs of firmware that derived
     # the seed wrongly would agree perfectly and still be wrong, and the mnemonic
     # to seed path here runs on a substituted PBKDF2 (hashlib has no OpenSSL under
-    # Pyodide), so "all three match" has to be anchored to a known answer.
+    # Pyodide), so "all four match" has to be anchored to a known answer.
     #
     # That anchor is BASELINE, and moving the comparison to the canvas does not
     # weaken it: the baseline is the same capture of the same screen, taken from
@@ -210,7 +218,7 @@ def same_seed() -> int:
     # output with nothing of the host in it. It is a picture rather than a digest
     # so that the anchor can be audited by opening it: it is SeedFinalizeScreen
     # reading "fingerprint b2269592", which is the BIP39 test vector "army van
-    # defense ..." and nothing else. Any of the three captures that differs from
+    # defense ..." and nothing else. Any of the four captures that differs from
     # it by one pixel fails here.
     if not os.path.exists(BASELINE):
         print(f"  FAIL no baseline at {BASELINE}")
@@ -220,7 +228,7 @@ def same_seed() -> int:
               f"({os.path.basename(BASELINE)}); the firmware decoded or derived "
               "something other than the test vector")
         return 1
-    print("  ok   all three encodings end on the same screen, and it is the "
+    print("  ok   every scan ends on the same screen, and it is the "
           "expected seed (fingerprint b2269592)")
     return 0
 
@@ -274,7 +282,7 @@ def main(argv) -> int:
 
     # Only meaningful when every scan test ran and passed: comparing a fresh
     # capture against a stale one would prove nothing.
-    if all(results.get(name) == 0 for name in ("scan_seedqr", "scan_compact", "scan_native")):
+    if all(results.get(name) == 0 for name in ("scan_seedqr", "scan_compact", "scan_jsqr", "scan_native")):
         results["same_seed"] = same_seed()
 
     print("\n" + "=" * 68)

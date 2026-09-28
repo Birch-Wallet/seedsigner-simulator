@@ -31,6 +31,16 @@
   var CAPTURE_W = 640;
   var CAPTURE_H = 480;
 
+  // Where build/fetch-assets.sh puts zxing-wasm: the reader's loader and its
+  // .wasm, from the npm tarball whose sha256 starts with the suffix. A new
+  // version is a new directory, which is what lets sw.js cache it forever.
+  var ZXING_DIR = "zxing-2416232a/";
+
+  // QR codes only, and one per frame, which is all the firmware takes: even an
+  // animated PSBT arrives one frame at a time. Asking for every format zxing
+  // knows would spend each frame hunting for barcodes nothing here can use.
+  var ZXING_OPTIONS = { formats: ["QRCode"], maxNumberOfSymbols: 1 };
+
   var HEADER_BYTES = 64;
   var QR_OFFSET = HEADER_BYTES;
   var QR_MAX = 8192;
@@ -176,66 +186,146 @@
       return { canvas: canvas, ctx: canvas.getContext("2d", { willReadFrequently: true }) };
     }
 
-    // Both decoders are used, for different halves of the job.
+    // zxing-wasm reads every frame, in every browser. It is zxing-cpp built for
+    // WebAssembly: its locator finds a QR in a cluttered camera frame that jsQR
+    // hunts for in vain, it decodes a 640x480 frame in about a millisecond, and
+    // it returns `bytes`, the content exactly as encoded. That last part is not
+    // optional. A CompactSeedQR is raw entropy bytes rather than text, and bytes
+    // do not survive being decoded as characters and re-encoded.
     //
-    // BarcodeDetector goes in front because deciding "there is no QR here" is
-    // what happens on almost every frame, and native does that faster. But it
-    // only ever exposes rawValue, a string, and a CompactSeedQR is raw entropy
-    // bytes rather than text -- bytes that do not survive being decoded as
-    // characters and re-encoded. So jsQR, which returns the codewords
-    // themselves, is the only thing allowed to produce a payload.
+    // It is a WebAssembly binary, so it is fetched and hash-checked by
+    // build/fetch-assets.sh rather than committed, the same as Pyodide, and a
+    // copy of the page can be served without it. Then jsQR, which also returns
+    // the codewords as bytes, takes over, helped by BarcodeDetector where the
+    // browser has one.
     //
-    // There is deliberately no falling back to rawValue when jsQR comes up
-    // empty. A mis-read string can still be a plausible length, and 16, 20, 24,
-    // 28 or 32 bytes is all it takes for DecodeQR to accept it as a
-    // CompactSeedQR -- which means the firmware would load a seed that was never
-    // in front of the camera. A scan that fails and retries is recoverable; a
-    // wrong seed presented as right is not. Caught by test_scan_native.py,
-    // which used to reach a valid-looking fingerprint from pure garbage.
+    // Native only ever exposes rawValue, a string, so it is never allowed to
+    // produce a payload. There is deliberately no falling back to rawValue when
+    // jsQR comes up empty. A mis-read string can still be a plausible length,
+    // and 16, 20, 24, 28 or 32 bytes is all it takes for DecodeQR to accept it
+    // as a CompactSeedQR -- which means the firmware would load a seed that was
+    // never in front of the camera. A scan that fails and retries is
+    // recoverable; a wrong seed presented as right is not. Caught by
+    // test_scan_native.py, which used to reach a valid-looking fingerprint from
+    // pure garbage.
     //
-    // jsQR is served from this origin: the page sends COEP require-corp, so a
-    // CDN would be refused.
+    // What native does contribute is whether, which it answers faster than jsQR
+    // on the many frames with nothing in them, and where. jsQR hunts for finder
+    // patterns across the whole frame, and a real scene -- a hand, a phone's
+    // edges, a keyboard -- gives it enough false candidates that it can fail on
+    // a QR native sees plainly, frame after frame. Handed a crop around native's
+    // box instead, the same pixels at the same scale, it reads. The box only
+    // chooses where jsQR looks; every byte is still jsQR's.
+    //
+    // Everything is served from this origin: the page sends COEP require-corp,
+    // so a CDN would be refused.
     function makeDecoder() {
-      return loadJsQR().then(withJsQR);
+      return loadZXing().then(withZXing, function (error) {
+        if (debugging()) console.log("[cam] zxing-wasm unavailable: " + error.message);
+        return Promise.all([nativeDetector(), loadScript("jsQR.js", "jsQR")]).then(function (both) {
+          return both[0] ? withNative(both[0], both[1]) : jsQROnly(both[1]);
+        });
+      });
     }
 
-    function loadJsQR() {
+    function debugging() {
+      return new URLSearchParams(location.search).has("debug");
+    }
+
+    // Resolves with the global the script defines.
+    function loadScript(src, global) {
       return new Promise(function (resolve, reject) {
-        if (scope.jsQR) return resolve(scope.jsQR);
+        if (scope[global]) return resolve(scope[global]);
         var tag = document.createElement("script");
-        tag.src = "jsQR.js";
-        tag.onload = function () { resolve(scope.jsQR); };
-        tag.onerror = function () { reject(new Error("jsQR.js did not load")); };
+        tag.src = src;
+        tag.onload = function () {
+          if (scope[global]) resolve(scope[global]);
+          else reject(new Error(src + " did not define " + global));
+        };
+        tag.onerror = function () { reject(new Error(src + " did not load")); };
         document.head.appendChild(tag);
       });
     }
 
-    function withJsQR(jsQR) {
-      function readBytes(imageData) {
-        var found = jsQR(imageData.data, imageData.width, imageData.height);
-        return found ? Uint8Array.from(found.binaryData) : null;
+    // zxing-wasm's loader would fetch its .wasm from jsDelivr by default, which
+    // the CSP and COEP both refuse; it is pointed at the copy beside it instead.
+    // Instantiated here rather than on the first read, so that a missing or
+    // unreadable binary is found out now, while jsQR can still take over.
+    function loadZXing() {
+      return loadScript(ZXING_DIR + "index.js", "ZXingWASM").then(function (zxing) {
+        return zxing.prepareZXingModule({
+          overrides: {
+            locateFile: function (path, prefix) {
+              return /\.wasm$/.test(path) ? ZXING_DIR + path : prefix + path;
+            },
+          },
+          fireImmediately: true,
+        }).then(function () { return zxing; });
+      });
+    }
+
+    function readJsQR(jsQR, imageData) {
+      var found = jsQR(imageData.data, imageData.width, imageData.height);
+      return found && found.binaryData.length ? Uint8Array.from(found.binaryData) : null;
+    }
+
+    function withNative(native, jsQR) {
+      // The box grown by a quarter on every side, so the quiet zone and all
+      // three finder patterns survive a box drawn a little tight.
+      function readAround(canvas, box) {
+        if (!box || !(box.width > 0) || !(box.height > 0)) return null;
+        var pad = Math.max(box.width, box.height) * 0.25;
+        var x = Math.max(0, Math.floor(box.x - pad));
+        var y = Math.max(0, Math.floor(box.y - pad));
+        var w = Math.min(canvas.width, Math.ceil(box.x + box.width + pad)) - x;
+        var h = Math.min(canvas.height, Math.ceil(box.y + box.height + pad)) - y;
+        if (w <= 0 || h <= 0) return null;
+        return readJsQR(jsQR, canvas.getContext("2d").getImageData(x, y, w, h));
       }
 
-      return nativeDetector().then(function (native) {
-        if (!native) {
-          return {
-            name: "jsQR",
-            read: function (source, imageData) {
-              return Promise.resolve(readBytes(imageData));
-            },
-          };
-        }
-        return {
-          name: "BarcodeDetector+jsQR",
-          read: function (source, imageData) {
-            return native.detect(source).then(function (codes) {
-              // Native says something is there; jsQR is what reads it. If jsQR
-              // disagrees, report nothing and wait for the next frame.
-              return codes.length ? readBytes(imageData) : null;
-            });
-          },
-        };
-      });
+      return {
+        name: "BarcodeDetector+jsQR",
+        read: function (source, imageData) {
+          return native.detect(source).then(function (codes) {
+            // Native says something is there; jsQR is what reads it, around
+            // each box first and then across the whole frame. If jsQR
+            // disagrees, report nothing and wait for the next frame.
+            if (!codes.length) return null;
+            for (var i = 0; i < codes.length; i++) {
+              var bytes = readAround(source, codes[i].boundingBox);
+              if (bytes) return bytes;
+            }
+            return readJsQR(jsQR, imageData);
+          });
+        },
+      };
+    }
+
+    function withZXing(zxing) {
+      return {
+        name: "zxing-wasm",
+        read: function (source, imageData) {
+          return zxing.readBarcodes(imageData, ZXING_OPTIONS).then(function (results) {
+            // `bytes`, not `text`: the content exactly as encoded, with no
+            // character set applied, which is what a CompactSeedQR needs.
+            for (var i = 0; i < results.length; i++) {
+              if (results[i].isValid && results[i].bytes.length) {
+                return Uint8Array.from(results[i].bytes);
+              }
+            }
+            return null;
+          });
+        },
+      };
+    }
+
+    function jsQROnly(jsQR) {
+      return {
+        name: "jsQR",
+        read: function (source, imageData) {
+          return Promise.resolve(readJsQR(jsQR, imageData));
+        },
+      };
     }
 
     function nativeDetector() {
@@ -291,7 +381,7 @@
         // Which of the two decoders is in play is the first thing worth knowing
         // when a scan misbehaves on someone else's browser, so it is behind the
         // same ?debug=1 as everything else rather than always on.
-        if (new URLSearchParams(location.search).has("debug")) {
+        if (debugging()) {
           console.log("[cam] " + frameW() + "x" + frameH() +
                       " decoding with " + decoder.name);
         }

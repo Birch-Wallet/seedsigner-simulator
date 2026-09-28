@@ -39,6 +39,14 @@
      script). */
   :root { color-scheme: dark; --page-w: 100vw; --page-h: 100vh; }
   @supports (height: 100dvh) { :root { --page-w: 100dvw; --page-h: 100dvh; } }
+  /* Taps are taps. Two quick ones on a phone are two key presses, never a
+     double-tap zoom: manipulation turns that off everywhere on the page, not
+     just on the drawn keys, while leaving pinch-to-zoom to anyone who needs
+     it. On every element, because touch-action is not inherited and #app is
+     a scroll container, which the spec lets stop an ancestor's value. And iOS
+     may not enlarge the text on its own when the phone turns. */
+  *, *::before, *::after { touch-action: manipulation; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   body {
     margin: 0; background: #0b0c0e; color: #d7dbe0;
     font: 15px/1.6 ui-sans-serif, system-ui, sans-serif;
@@ -500,8 +508,8 @@
         is made in this browser from the firmware's frames, not by filming the
         page, so the pointer is never in it, and nothing is uploaded anywhere.</p>
 
-        <p><strong>Licences.</strong> SeedSigner, Pyodide, jsQR, mp4-muxer and
-        the libraries under them are other people's work, each under its own
+        <p><strong>Licences.</strong> SeedSigner, Pyodide, jsQR, zxing-wasm,
+        mp4-muxer and the libraries under them are other people's work, each under its own
         licence. <a href="licenses/NOTICES.txt">The notices and licence
         texts</a> are served alongside this page.</p>
       </div>
@@ -654,6 +662,20 @@ function watchStatus() {
 new MutationObserver(watchStatus).observe(statusEl,
   { childList: true, characterData: true, subtree: true, attributes: true });
 watchStatus();
+
+// Quick taps are never a zoom. The drawn keys see to their own touches (see
+// seedsigner-device.js); this covers the rest of the page, where a second tap
+// within a moment of the first is iOS Safari's double-tap zoom. Real controls
+// are left alone, so their taps still click.
+let lastTouchEnd = 0;
+document.addEventListener("touchend", (event) => {
+  const now = event.timeStamp;
+  const quick = now - lastTouchEnd < 350;
+  lastTouchEnd = now;
+  if (!quick || !event.cancelable) return;
+  if (event.target.closest("button, a, summary, input, select, textarea, [data-ssd-channel]")) return;
+  event.preventDefault();
+}, { passive: false });
 
 // The i panel covers the page, so a click outside it or Escape closes it.
 const aboutPanel = document.getElementById("about");

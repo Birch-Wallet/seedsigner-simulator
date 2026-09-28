@@ -156,6 +156,16 @@
       svgEl.addEventListener("mousedown", begin);
       global.addEventListener("mouseup", release);
     }
+
+    // A touch on a key is finished with once it has pressed the key. iOS
+    // Safari does not reliably honour touch-action inside an SVG, so quick taps
+    // on one key -- three Downs to walk a list -- read as a double- or
+    // triple-tap and zoom the page. Cancelling the touch's end is what tells it
+    // the tap was handled; the press itself already happened on pointerdown.
+    svgEl.addEventListener("touchend", function (event) {
+      var hit = event.target.closest && event.target.closest("[data-ssd-channel]");
+      if (hit && event.cancelable) event.preventDefault();
+    }, { passive: false });
   }
 
   function injectStyle() {

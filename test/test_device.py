@@ -179,6 +179,38 @@ def main() -> int:
         check("a tap on a drawn key presses that key",
               page.evaluate("() => window.__downs") == ["up"],
               str(page.evaluate("() => window.__downs")))
+        page.wait_for_timeout(500)
+        # iOS Safari reads two quick taps as a zoom unless the element under
+        # them says otherwise; the whole page has to, not just the drawn keys,
+        # since a quick second tap can land on the bar or the space around.
+        actions = page.evaluate("""() => ['html', 'body', '#controls .ctl', '#stage']
+          .map((s) => getComputedStyle(document.querySelector(s)).touchAction)""")
+        check("two quick taps are never a zoom, anywhere on the page",
+              all(a == "manipulation" for a in actions), str(actions))
+        page.evaluate("""() => {
+          window.__ends = [];
+          addEventListener("touchend", (e) => window.__ends.push(e.defaultPrevented));
+        }""")
+        x, y = centre(page, "#device [data-ssd-control=down]")
+        page.evaluate("() => { window.__downs.length = 0; window.__ends.length = 0; }")
+        for _ in range(3):
+            page.touchscreen.tap(x, y)
+            page.wait_for_timeout(90)
+        page.wait_for_timeout(200)
+        check("three quick taps on a key are three presses",
+              page.evaluate("() => window.__downs") == ["down"] * 3,
+              str(page.evaluate("() => window.__downs")))
+        check("and none of them is left for the browser to read as a zoom",
+              page.evaluate("() => window.__ends") == [True] * 3,
+              str(page.evaluate("() => window.__ends")))
+        page.evaluate("() => { window.__ends.length = 0; }")
+        gap = page.locator("#stage").bounding_box()
+        for _ in range(2):
+            page.touchscreen.tap(gap["x"] + 4, gap["y"] + gap["height"] / 2)
+            page.wait_for_timeout(90)
+        check("two quick taps beside the device are not a zoom either",
+              page.evaluate("() => window.__ends")[-1:] == [True],
+              str(page.evaluate("() => window.__ends")))
         page.screenshot(path=harness.artifact("device-sideways-page.png"))
 
         # --- the screen is not a button --------------------------------------

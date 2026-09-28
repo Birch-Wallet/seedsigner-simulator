@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Fetch the Pyodide runtime -- the CPython-on-WebAssembly build the simulator
-# runs the firmware inside.
+# runs the firmware inside -- and zxing-wasm, the page's QR decoder.
 #
 # It is about 26 MB of prebuilt binaries and it is deliberately not committed:
 # a git repository is a bad place for a WASM blob nobody can read, and putting
@@ -11,6 +11,7 @@
 # unpacks something it could not identify.
 #
 #   ./build/fetch-assets.sh              # fetch into src/web/pyodide-e24b45d3
+#                                        # and src/web/zxing-2416232a
 #   ./build/fetch-assets.sh --check      # re-verify what is already on disk
 #
 # Trust chain, in the order it is established:
@@ -25,6 +26,9 @@
 #      separately and checked against the hashes in that lock file. No hash for
 #      them is written down here, because it does not need to be -- it is
 #      already inside something we verified.
+#   4. zxing-wasm is a separate chain of one link: its npm tarball, checked
+#      against ZXING_SHA256, with the two files taken out of it checked
+#      against their own hashes as well.
 #
 # Requires: bash, curl, python3, and sha256sum (or shasum).
 
@@ -76,7 +80,8 @@ Usage: fetch-assets.sh [options]
 
   --dest DIR   Where to put the Pyodide runtime
                (default: <repo>/src/web/pyodide-e24b45d3, which is the name the
-               worker loads and which .gitignore excludes)
+               worker loads and which .gitignore excludes). zxing-wasm goes
+               beside it, in zxing-2416232a
   --check      Verify what is already on disk and exit. Touches the network
                only if something is missing.
   --force      Re-download even if the destination already verifies
@@ -114,6 +119,22 @@ elif command -v shasum >/dev/null 2>&1; then
 else
     die "no sha256 tool found (looked for sha256sum and shasum)"
 fi
+
+# Scratch space for everything downloaded, removed however the script exits.
+WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/seedsigner-sim-assets.XXXXXXXX")"
+cleanup() {
+    rm -rf -- "${WORK_DIR}"
+}
+trap cleanup EXIT
+
+# download URL DEST
+download() {
+    curl --fail --location --silent --show-error \
+         --proto '=https' --tlsv1.2 \
+         --retry 3 --retry-delay 2 \
+         --output "$2" -- "$1" \
+        || die "download failed: $1"
+}
 
 # ---------------------------------------------------------------------------
 # The committed build inputs
@@ -202,6 +223,109 @@ ${REGENERATE_HINT}"
 step "checking committed build inputs against build/checksums.txt"
 verify_checksums
 verify_manifest_covers
+
+# ---------------------------------------------------------------------------
+# zxing-wasm, the QR decoder
+# ---------------------------------------------------------------------------
+#
+# src/web/camera.js decodes every camera frame with zxing-wasm, a WebAssembly
+# build of zxing-cpp, in every browser, and falls back to jsQR only if it is
+# missing. jsQR alone is slow to find a QR in a real camera frame, and without
+# a native BarcodeDetector to point it -- Safari, so every browser on an
+# iPhone, and Chrome on Windows and Linux -- can take many seconds.
+#
+# Two files from one npm tarball: the reader's loader and the binary it
+# instantiates. They are taken together because the loader is Emscripten glue
+# generated for exactly that binary, and a pair from different releases fails
+# in ways that look like anything but a version mismatch. The tarball is checked
+# before anything is read out of it, and each file afterwards, so what is on
+# disk can be re-verified later without the network.
+#
+# The directory is named after the tarball's hash, the way pyodide-e24b45d3 is
+# named, and for the same reason: sw.js caches such paths forever, which is only
+# safe if different bytes always arrive under a different name. camera.js names
+# the directory too; the three must change together.
+
+ZXING_VERSION="3.1.4"
+ZXING_URL="https://registry.npmjs.org/zxing-wasm/-/zxing-wasm-${ZXING_VERSION}.tgz"
+ZXING_SHA256="2416232a155533bdcfa098a22ec9087734b34640ffa2a7add90bc36e145f6da0"
+
+# Beside the Pyodide runtime, wherever --dest puts it: both are served from the
+# page's own directory.
+ZXING_DIR="$(dirname -- "${DEST_DIR}")/zxing-${ZXING_SHA256:0:8}"
+
+# "path in the tarball  name served  sha256"
+ZXING_FILES=(
+    "package/dist/iife/reader/index.js      index.js           d33d09ce132a692faffbed0dce656c36cb2573b4b843885a6e036390d1071d95"
+    "package/dist/reader/zxing_reader.wasm  zxing_reader.wasm  e8af31edb56d0522f4de74495839385ef019ba8bc90d38e5ecb2f18795d86fb2"
+)
+
+# zxing_installed  ->  0 if both files are present and hash correctly.
+zxing_installed() {
+    local entry member name expected ok=0
+    for entry in "${ZXING_FILES[@]}"; do
+        read -r member name expected <<< "${entry}"
+        if [ ! -f "${ZXING_DIR}/${name}" ]; then
+            echo "    missing  ${name}"
+            ok=1
+        elif [ "$(sha256_of "${ZXING_DIR}/${name}")" != "${expected}" ]; then
+            echo "    CHANGED  ${name}"
+            ok=1
+        fi
+    done
+    return "${ok}"
+}
+
+fetch_zxing() {
+    local tarball="${WORK_DIR}/zxing-wasm-${ZXING_VERSION}.tgz" actual entry member name expected
+
+    step "downloading ${ZXING_URL}"
+    download "${ZXING_URL}" "${tarball}"
+
+    actual="$(sha256_of "${tarball}")"
+    if [ "${actual}" != "${ZXING_SHA256}" ]; then
+        die "sha256 mismatch on zxing-wasm -- REFUSING TO UNPACK
+  url      ${ZXING_URL}
+  expected ${ZXING_SHA256}
+  got      ${actual}"
+    fi
+    echo "    ${actual}"
+
+    mkdir -p "${WORK_DIR}/zxing"
+    for entry in "${ZXING_FILES[@]}"; do
+        read -r member name expected <<< "${entry}"
+        # Read out by name rather than unpacked, so nothing else in the tarball
+        # is ever written anywhere.
+        python3 - "${tarball}" "${member}" "${WORK_DIR}/zxing/${name}" <<'EXTRACT'
+import shutil, sys, tarfile
+
+with tarfile.open(sys.argv[1]) as tf:
+    member = tf.getmember(sys.argv[2])
+    if not member.isfile():
+        sys.exit(f"{sys.argv[2]} is not a regular file in the tarball")
+    with tf.extractfile(member) as src, open(sys.argv[3], "wb") as dst:
+        shutil.copyfileobj(src, dst)
+EXTRACT
+        actual="$(sha256_of "${WORK_DIR}/zxing/${name}")"
+        [ "${actual}" = "${expected}" ] || die "the verified zxing-wasm tarball holds a ${name} with sha256 ${actual}, but this script pins ${expected}"
+    done
+
+    mkdir -p "${ZXING_DIR}"
+    for entry in "${ZXING_FILES[@]}"; do
+        read -r member name expected <<< "${entry}"
+        mv -- "${WORK_DIR}/zxing/${name}" "${ZXING_DIR}/${name}"
+    done
+    echo "    installed into ${ZXING_DIR}"
+}
+
+step "verifying zxing-wasm ${ZXING_VERSION} in ${ZXING_DIR}"
+if [ "${MODE}" != "force" ] && zxing_installed; then
+    echo "    zxing-wasm ${ZXING_VERSION}: both files present and matching"
+elif [ "${MODE}" = "check" ]; then
+    die "zxing-wasm in ${ZXING_DIR} does not verify; run without --check to fetch it"
+else
+    fetch_zxing
+fi
 
 # ---------------------------------------------------------------------------
 # Is the runtime already here and correct?
@@ -305,21 +429,6 @@ fi
 # ---------------------------------------------------------------------------
 # Fetch
 # ---------------------------------------------------------------------------
-
-WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/seedsigner-sim-assets.XXXXXXXX")"
-cleanup() {
-    rm -rf -- "${WORK_DIR}"
-}
-trap cleanup EXIT
-
-# download URL DEST
-download() {
-    curl --fail --location --silent --show-error \
-         --proto '=https' --tlsv1.2 \
-         --retry 3 --retry-delay 2 \
-         --output "$2" -- "$1" \
-        || die "download failed: $1"
-}
 
 TARBALL="${WORK_DIR}/pyodide-core-${PYODIDE_VERSION}.tar.bz2"
 

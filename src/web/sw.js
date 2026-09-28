@@ -51,7 +51,7 @@ const SHELL = [
 // it is rebuilt whenever the Python side changes, and cache-first with no
 // revalidation would keep a returning visitor on the old firmware forever while
 // handing them fresh JS around it.
-const IMMUTABLE = /\/(pyodide-[0-9a-f]{8}\/|fonts\/)/;
+const IMMUTABLE = /\/(pyodide-[0-9a-f]{8}\/|zxing-[0-9a-f]{8}\/|fonts\/)/;
 
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {

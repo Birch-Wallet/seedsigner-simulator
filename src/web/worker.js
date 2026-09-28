@@ -223,6 +223,18 @@ _settings = {"display_config": ${JSON.stringify(width === 240 && height === 240
 with open("/firmware/settings.json", "w") as handle:
     json.dump(_settings, handle)
 
+# --- a wall clock as fine as the device's -------------------------------------
+# time.time() here is Date.now(): it moves in whole milliseconds, so two reads
+# less than one apart are equal. On a Pi it has microseconds, and stock relies on
+# that without saying so: ScanScreen divides its frame count by the time since the
+# scan started, and a first frame decoded inside the same millisecond -- which
+# Safari manages -- ends in ZeroDivisionError. time.monotonic() is
+# performance.now(), microseconds even here, so the wall clock is read once and
+# carried forward on it.
+import time as _wall
+_wall_origin = _wall.time() - _wall.monotonic()
+_wall.time = lambda: _wall_origin + _wall.monotonic()
+
 # --- threads, taking turns ----------------------------------------------------
 # Pyodide is one thread. SeedSigner's animation threads -- the spinner, the
 # pulsing warning edge, scrolling labels, animated QRs, the camera preview -- run

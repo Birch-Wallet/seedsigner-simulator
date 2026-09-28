@@ -2,8 +2,8 @@
 
 Almost none of the code that runs in this simulator was written for it. The
 firmware is upstream SeedSigner, its files unmodified. The Python interpreter is
-Pyodide. The QR decoder is jsQR, and recordings are packed into MP4 by
-mp4-muxer. Everything the firmware imports is somebody else's library, pinned to
+Pyodide. The QR decoder is zxing-wasm, with jsQR as its fallback, and recordings are packed
+into MP4 by mp4-muxer. Everything the firmware imports is somebody else's library, pinned to
 a version and fetched from its own upstream.
 
 This file lists all of it: what it is, which version or commit, where it comes
@@ -21,7 +21,7 @@ checkable in a different way:
 | Route | What it is | How to check it |
 | --- | --- | --- |
 | Committed to this repository | `src/web/jsQR.js` and `src/web/mp4-muxer.js`, and nothing else (plus the licence texts in `src/web/licenses/`) | `sha256sum -c build/checksums.txt` |
-| Fetched at deploy time | The Pyodide runtime and the compiled wheels it loads | `./build/fetch-assets.sh --check` |
+| Fetched at deploy time | The Pyodide runtime and the compiled wheels it loads, and zxing-wasm | `./build/fetch-assets.sh --check` |
 | Built into `seedsigner-stock.zip` | SeedSigner and its pure-Python dependencies | `./build/build-firmware-zip.sh`, then compare the sha256 |
 
 The third route is the one that matters most, because `seedsigner-stock.zip` is the
@@ -48,10 +48,11 @@ curl -sL https://registry.npmjs.org/jsqr/-/jsqr-1.4.0.tgz \
   | tar xzO package/dist/jsQR.js | sha256sum
 ```
 
-This is the camera seam. Upstream SeedSigner decodes QR codes with `pyzbar`,
-which binds the C library libzbar and therefore cannot exist in this
-environment; jsQR does the decoding in JavaScript instead and hands the result
-to the firmware through `src/shims/browser_camera.py`.
+This is the camera seam's fallback. Upstream SeedSigner decodes QR codes with
+`pyzbar`, which binds the C library libzbar and therefore cannot exist in this
+environment; zxing-wasm (section 2) does the decoding in the page instead, and
+jsQR does it when zxing-wasm cannot be loaded. Either hands the result to the
+firmware through `src/shims/browser_camera.py`.
 
 ### mp4-muxer 5.2.2, MIT
 
@@ -121,6 +122,32 @@ uses. The wheel's own `LICENSE` covers Pillow alone:
 pycryptodome is not something SeedSigner asks for. Pyodide's `hashlib` has no
 OpenSSL under it and so no `pbkdf2_hmac`, which is the mnemonic-to-seed step;
 the worker borrows pycryptodome's PBKDF2 to fill that one hole.
+
+### zxing-wasm 3.1.4, MIT, with zxing-cpp under Apache-2.0
+
+* Upstream: https://github.com/Sec-ant/zxing-wasm
+* Artifact: npm `zxing-wasm@3.1.4`
+  (`https://registry.npmjs.org/zxing-wasm/-/zxing-wasm-3.1.4.tgz`)
+* sha256: `2416232a155533bdcfa098a22ec9087734b34640ffa2a7add90bc36e145f6da0`
+* Files: `package/dist/iife/reader/index.js` and
+  `package/dist/reader/zxing_reader.wasm`, served unmodified from
+  `src/web/zxing-2416232a/`
+* Compiled from zxing-cpp at commit `0b2d9a8fc81f420f369928c24331091ff0525976`
+
+The page's QR decoder, in every browser. jsQR is what it falls back to if this
+is missing, with the browser's own `BarcodeDetector` pointing it at the QR where
+there is one. About 1 MB, so fetched rather than committed, for the same reason
+as Pyodide. `fetch-assets.sh` checks the tarball before reading anything out of
+it, and each of the two files against its own pinned hash afterwards. Confirm
+the tarball independently:
+
+```
+curl -sL https://registry.npmjs.org/zxing-wasm/-/zxing-wasm-3.1.4.tgz | sha256sum
+```
+
+zxing-wasm's JavaScript is MIT. The `.wasm` is zxing-cpp plus zxing-wasm's own
+C++ bindings, both **Apache-2.0**, and neither has a `NOTICE` file. The reader
+build does not include zint, which only the writer build uses.
 
 ---
 
@@ -210,7 +237,7 @@ Nothing in them is ever called; `src/fakes/README.md` says why.
 | Upstream pin | Why it is not in the firmware zip |
 | --- | --- |
 | `Pillow` | Compiled. Pyodide's build is loaded at boot instead. |
-| `pyzbar` | Binds libzbar, which has no WebAssembly build. `src/fakes/pyzbar` lets the import succeed, and jsQR does the decoding. |
+| `pyzbar` | Binds libzbar, which has no WebAssembly build. `src/fakes/pyzbar` lets the import succeed, and zxing-wasm, or jsQR as its fallback, does the decoding. |
 
 Pillow is met at a different version than upstream asks for, because Pyodide
 decides: 10.2.0 rather than 10.3.0. There is no way to satisfy that pin in this
@@ -232,9 +259,10 @@ repository. So the texts are served from `src/web/licenses/` next to the page,
 with `NOTICES.txt` as the index, and the page's **i** panel links to it. Three
 cases matter most:
 
-* **jsQR** (Apache-2.0 §4(a)) and **mp4-muxer** (MIT) are minified files with
-  no licence header, so the served licence texts are the only notice they
-  have.
+* **jsQR** (Apache-2.0 §4(a)), **zxing-wasm** (MIT, with zxing-cpp under
+  Apache-2.0 inside its `.wasm`) and **mp4-muxer** (MIT) are minified files
+  or compiled binaries with no licence header, so the served licence texts
+  are the only notice they have.
 * **Pyodide** (MPL-2.0 §3.2) is served in Executable Form. That is allowed as
   long as the recipient is told where to get the Source Code Form, and
   `NOTICES.txt` says where. The files are unmodified, so no source of our own

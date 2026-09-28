@@ -41,11 +41,12 @@ jobs:
           path: |
             build/out
             src/web/pyodide-e24b45d3
+            src/web/zxing-2416232a
           key: assets-${{ hashFiles('build/*.sh', 'build/checksums.txt', 'UPSTREAM', '.github/workflows/test.yml') }}
 
       # fetch-assets.sh needs curl and python3; build-firmware-zip.sh also needs
       # git. All three are on the runner image already.
-      - name: Build the firmware zip and fetch the Pyodide runtime
+      - name: Build the firmware zip and fetch Pyodide and zxing-wasm
         if: steps.assets.outputs.cache-hit != 'true'
         run: |
           ./build/fetch-assets.sh

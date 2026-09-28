@@ -47,20 +47,20 @@
 #
 #     curl -sL https://registry.npmjs.org/mp4-muxer/-/mp4-muxer-5.2.2.tgz | tar xzO package/build/mp4-muxer.js | sha256sum
 
-419e71e80569f53e0f3771047665ef2aaddc4de9296b708b851cad5c409ed9e2  src/shims/browser_camera.py
+a28d1d36a3d1bf60fdb71ae4a7224aa8cc070b700996b6f30962a6c0981baa88  src/shims/browser_camera.py
 d35ca8a3d833eb5ab9dc08a9b04199203067bc8f3a14289563f484c0e4b35bac  src/shims/browser_display.py
 a095b4fd85aab4528a667f400c72df80f75bc785850d0a96c796a8023e513379  src/shims/browser_threads.py
 0243ccf633097906b763839cd4b2d9f92fccd042bac1fd11ee7be60f31e78687  src/web/apple-touch-icon.png
-f1c3ac9e7be514f81a8140c908efba0d2c3bc0188b5b51d31d67693323f65770  src/web/camera.js
+b3aa78078e5fb9bebe8552d2c4bb85d54cc4766b4af9570e2de8c63a586af97d  src/web/camera.js
 1ebb8267bb112587c9739a7f30fd9197c3e0137a0fcd4677f6a8677b6fa307f5  src/web/icon-192.png
 2c740b578143c67bbca1f950c33fe62d2a06fd22d5c0a7adf58348dc648e09bf  src/web/icon-512.png
-1e50a4c0619ef504d93a8e6384d3c4ddb6d384c003d8422e794b67306752b7dd  src/web/index.html
+354f9ee7a914add65d35ce66334dacee30e9f77ff1cc33a629e1ae5887c822b7  src/web/index.html
 bc40c8a15196236b2314db0856f72ca0b49980cd5413b8c852a7349f5fee0859  src/web/jsQR.js
 c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08  src/web/licenses/Apache-2.0.txt
 3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf  src/web/licenses/CPython.txt
 e779748dfe75e84f974df3c7bc07f842011a100159158b0f1f49b2f2a5a515cb  src/web/licenses/FontAwesome.txt
 f4b133e25df1f86ad3ffea453aa0e613f0474f34778dbbb3e437e7b2724937d8  src/web/licenses/FreeType-FTL.txt
-e9057bc6e75391ec97021d6f55572199c900dc9a8c1681a79301446dd5897cd4  src/web/licenses/NOTICES.txt
+72dd5ab44b16ad94d677783022df6f0feb6a0574e3bac04ea66aa39c72ba7866  src/web/licenses/NOTICES.txt
 ed1285f591bcb40785e0fd19c6cef89f42010186e4227afbbe31279453b4af83  src/web/licenses/OFL-1.1.txt
 e706384c6f299d1b6fa782ae657740b372b4bd7938a1a318bf94ac249114758a  src/web/licenses/Pillow.txt
 1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5  src/web/licenses/Pyodide-MPL-2.0.txt
@@ -70,13 +70,14 @@ fbd6fed7938541d2c809c0826225fc85e551fdbfa8732b10f0c87e0847acafd7  src/web/licens
 4e04660d77c1c64e89d79537919fb8240fa21484a7e3db29f358b2c7f84ea073  src/web/licenses/pycryptodome.txt
 a735999c7e5649df6fcda6fb06ab97435851c392b1b93494ae8725f37441632f  src/web/licenses/secp256k1-zkp.txt
 845efc77857d485d91fb3e0b884aaa929368c717ae8186b66fe1ed2495753243  src/web/licenses/zlib.txt
+fb506e4ade12d7a9efa67c9d76a9a28c8e15d347ca49a69e48e29b40b34ad2ab  src/web/licenses/zxing-wasm.txt
 b8dcd3c304b490bd065ffc93d15a89e045abd473e17f694091605f8becb25904  src/web/manifest.json
 cc4d30bd20b9ffe0b15f59cf0de3e1930626ccd46a5146e36e4d619d7fecf63d  src/web/mp4-muxer.js
 77dcc0b7e4e2198e5e6e606057417d90634d85d112536c83d9c4b210f40b70b3  src/web/og-image.png
 e7e57bcc34bff30415ed877a236791fd8dab77b888d7ab059cb3c0e7b6353997  src/web/recorder.js
-1afbf4c43ff24ce9591d82bfc01078db992dc1341c8bdbd234b4150d2fa7509d  src/web/seedsigner-device.js
-9bb91f55e9aa70253b6c4a7c8ed4296aff43629bcb9f20bc5c7ff1eb061a06e7  src/web/sw.js
-1b9bc09a8c805c1912a0ff76480a1cbbee3dcc128c333933449582329a1dc5ad  src/web/worker.js
+c87c006510698a48c1262ebd3b73116b21e75befeb3d5cc97e4bcc871f041651  src/web/seedsigner-device.js
+08680953279a4f253c3744af6ab8c877d079d61942bdc6ead22c4fb7caf03923  src/web/sw.js
+be4fc9e91149ec4ffa31d4de917f6b5665e26b940f514cd08fbe830b4d242a6c  src/web/worker.js
 
 # The stand-in packages, which build/build-firmware-zip.sh copies out of the working
 # tree and into a firmware zip whole. Every other input to that zip is pinned by a

@@ -1,10 +1,12 @@
 """
-Exercise the BarcodeDetector branch, which the jsQR run never reaches.
+Exercise the BarcodeDetector branch: the fallback, when zxing-wasm cannot be
+loaded, in a browser that has a native detector.
 
-Chromium on desktop Linux ships no Shape Detection API, so test_scan.py always
-falls through to jsQR and leaves the preferred path untested. Here a stand-in
-BarcodeDetector is installed before any page script runs, so the page takes the
-native branch. What this proves is the wiring, not Chrome's decoder.
+zxing-wasm is refused here, the way test_scan.py's jsQR run refuses it, and a
+stand-in BarcodeDetector is installed before any page script runs, so the page
+takes the native branch whatever this Chromium has of its own -- and Chromium
+on Linux, where CI runs, has none. What this proves is the wiring, not Chrome's
+decoder.
 
 The stub always answers "yes, a QR", and always with rubbish for rawValue. That
 is not artificial: a real BarcodeDetector handed a CompactSeedQR returns mojibake,
@@ -65,9 +67,12 @@ def open_scanner(p, y4m):
         "--use-fake-device-for-media-stream",
         f"--use-file-for-fake-video-capture={y4m}",
     ])
+    # A request the service worker answers never reaches the route below.
     context = browser.new_context(permissions=["camera"],
-                                  viewport={"width": 900, "height": 900})
+                                  viewport={"width": 900, "height": 900},
+                                  service_workers="block")
     context.add_init_script(STUB)
+    context.route("**/zxing-*/**", lambda route: route.abort())
     page = context.new_page()
     log = Log(page)
 

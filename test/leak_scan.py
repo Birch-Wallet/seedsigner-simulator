@@ -67,9 +67,10 @@ ALLOWED_HOME_USERS = {"runner", "user", "username", "you", "youruser", "example"
 # never reports it -- this entry only matters to the directory-walk fallback
 # below, which otherwise flags the home directory Emscripten hardcodes for its
 # own virtual filesystem. That is a path inside a sandbox, not a path on
-# anybody's machine.
+# anybody's machine. "zxing-2416232a" is the same kind of thing: fetched,
+# checked, gitignored, and minified Emscripten output.
 SKIP_DIRECTORIES = {".git", "node_modules", "artifacts", "__pycache__", ".venv",
-                    "pyodide-e24b45d3"}
+                    "pyodide-e24b45d3", "zxing-2416232a"}
 
 # Binary-ish files carry no infrastructure and produce noise if grepped.
 SKIP_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".ico", ".woff", ".woff2",

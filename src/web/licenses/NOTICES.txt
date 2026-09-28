@@ -14,13 +14,27 @@ The simulator's own code is MIT licensed; see LICENSE in its repository.
 ------------------------------------------
 
 jsQR 1.4.0                        Apache-2.0              Apache-2.0.txt
-  jsQR.js, unmodified from npm jsqr@1.4.0 (dist/jsQR.js).
+  jsQR.js, unmodified from npm jsqr@1.4.0 (dist/jsQR.js). The QR decoder
+  when zxing-wasm is unavailable.
   https://github.com/cozmo/jsQR
 
 mp4-muxer 5.2.2                   MIT                     mp4-muxer.txt
   mp4-muxer.js, unmodified from npm mp4-muxer@5.2.2 (build/mp4-muxer.js).
   Copyright (c) 2023 Vanilagy
   https://github.com/Vanilagy/mp4-muxer
+
+zxing-wasm 3.1.4                  MIT                     zxing-wasm.txt
+  zxing-2416232a/index.js and zxing-2416232a/zxing_reader.wasm, unmodified
+  from npm zxing-wasm@3.1.4 (dist/iife/reader/index.js and
+  dist/reader/zxing_reader.wasm). The QR decoder.
+  Copyright (c) 2023 Ze-Zheng Wu
+  https://github.com/Sec-ant/zxing-wasm
+
+  zxing-cpp                       Apache-2.0              Apache-2.0.txt
+    Compiled into zxing_reader.wasm, together with zxing-wasm's own C++
+    bindings, which are Apache-2.0 as well. zxing-cpp at commit
+    0b2d9a8fc81f420f369928c24331091ff0525976.
+    https://github.com/zxing-cpp/zxing-cpp
 
 
 2. The Python runtime (pyodide-e24b45d3/)
