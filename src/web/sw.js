@@ -6,7 +6,8 @@
  * visit after the first.
  *
  * Two rules, because the payload splits cleanly in two:
- *   - Pyodide and fonts are large and effectively immutable.
+ *   - Pyodide, zxing-wasm and the other languages' fonts are large and
+ *     immutable: each sits in a directory named by a hash of what is in it.
  *     Cache-first, fetched once and kept until VERSION changes.
  *   - The pages and our own scripts change every deploy. Network-first, so a
  *     deploy is visible on the next load rather than whenever the cache expires.
@@ -51,7 +52,7 @@ const SHELL = [
 // it is rebuilt whenever the Python side changes, and cache-first with no
 // revalidation would keep a returning visitor on the old firmware forever while
 // handing them fresh JS around it.
-const IMMUTABLE = /\/(pyodide-[0-9a-f]{8}\/|zxing-[0-9a-f]{8}\/|fonts\/)/;
+const IMMUTABLE = /\/(pyodide-[0-9a-f]{8}\/|zxing-[0-9a-f]{8}\/|fonts-[0-9a-f]{8}\/)/;
 
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {

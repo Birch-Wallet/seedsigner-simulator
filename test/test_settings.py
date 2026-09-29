@@ -5,9 +5,10 @@ This exists because it once did not, and nothing noticed: every settings
 change died on a System Error screen, the network selector among them, which is
 the first thing anyone testing against a test network has to touch.
 
-The firmware's settings live in an in-memory filesystem, so nothing here survives
-a reload, and that is the point: this asks whether the change works at all, not
-whether it persists.
+The firmware's settings live in an in-memory filesystem, and with Persistent
+Settings off, as a fresh browser has it, nothing here survives a reload. That is
+the point: this asks whether the change works at all, not whether it persists.
+Persisting is test_persistent_settings.py's.
 
 It also checks the network indicator under the device and the two halves of the
 warning above it, and this is the file to check them in: neither is worth

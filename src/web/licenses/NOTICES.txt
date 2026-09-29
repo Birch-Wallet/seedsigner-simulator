@@ -78,9 +78,9 @@ pycryptodome 3.20.0               BSD-2-Clause, and       pycryptodome.txt
 3. Inside the firmware zip (seedsigner-stock.zip)
 -------------------------------------------------
 
-SeedSigner (MIT), embit (MIT), qrcode (BSD-3-Clause) and urtypes (MIT) carry
-their licence texts inside the zip, in licenses/, with licenses/MANIFEST.txt
-naming each. Two parts of the tree carry their own licence in place:
+SeedSigner (MIT), seedsigner-translations (MIT), embit (MIT), qrcode
+(BSD-3-Clause) and urtypes (MIT) carry their licence texts inside the zip, in
+licenses/, with licenses/MANIFEST.txt naming each. Two parts of the tree carry their own licence in place:
 seedsigner/helpers/ur2/LICENSE (BSD-2-Clause-Patent, Foundation Devices, Inc.)
 and urtypes/cbor/COPYING (MIT, with its own copyright holders).
 
@@ -99,6 +99,13 @@ Fonts in seedsigner/resources/fonts/
     Digitized data copyright (c) 2010-2011, Google Corporation.
   seedsigner-icons                SeedSigner's own, under SeedSigner's MIT
                                   licence
+
+Fonts served beside the zip, in fonts-<hash>/, for the languages that need them
+  Noto Sans Arabic, Japanese,     OFL-1.1                 OFL-1.1.txt
+  Korean, Simplified Chinese,
+  Thai
+    Copyright 2014-2022 The Noto Project Authors
+    From seedsigner-translations/fonts, at the commit SeedSigner pins.
 
 libsecp256k1 (secp256k1-zkp)      MIT                     secp256k1-zkp.txt
   embit/util/prebuilt/ holds native builds of it for desktop and Raspberry Pi

@@ -42,6 +42,8 @@ SUITE = [
     ("toasts", ["test_toasts.py"], False),
     ("build_info", ["test_build_info.py"], True),
     ("settings", ["test_settings.py"], True),
+    ("persistent_settings", ["test_persistent_settings.py"], True),
+    ("languages", ["test_languages.py"], True),
     ("scan_seedqr", ["test_scan.py"], True),
     ("scan_compact", ["test_scan.py"], True),
     ("scan_jsqr", ["test_scan.py"], True),

@@ -22,7 +22,7 @@ checkable in a different way:
 | --- | --- | --- |
 | Committed to this repository | `src/web/jsQR.js` and `src/web/mp4-muxer.js`, and nothing else (plus the licence texts in `src/web/licenses/`) | `sha256sum -c build/checksums.txt` |
 | Fetched at deploy time | The Pyodide runtime and the compiled wheels it loads, and zxing-wasm | `./build/fetch-assets.sh --check` |
-| Built into `seedsigner-stock.zip` | SeedSigner and its pure-Python dependencies | `./build/build-firmware-zip.sh`, then compare the sha256 |
+| Built into `seedsigner-stock.zip` | SeedSigner, its translations and its pure-Python dependencies; also the translations' fonts, built beside the zip into `fonts-<hash>/` | `./build/build-firmware-zip.sh`, then compare the sha256. The fonts are checked against the sha256 the zip's `deferred-fonts.json` names, by the worker as it fetches each one |
 
 The third route is the one that matters most, because `seedsigner-stock.zip` is the
 code that touches your seed. It is not committed. Build it yourself and compare
@@ -191,6 +191,32 @@ SeedSigner's tree is not all under SeedSigner's own MIT licence:
 The fonts' licence texts are served from `src/web/licenses/` rather than added
 to the zip, because the zip holds the upstream tree verbatim and adding a file
 would change its published hash.
+
+### The translations
+
+**seedsigner-translations, MIT**
+
+* Repository: https://github.com/SeedSigner/seedsigner-translations
+* Commit: `708961a4163b1bd43eb15c4a26713649c63f6ccd`, the commit SeedSigner's own
+  tree pins for its `src/seedsigner/resources/seedsigner-translations` submodule
+  at the firmware commit above. The build reads it from there; nothing in this
+  repository pins it separately.
+* In the zip as: `seedsigner/resources/seedsigner-translations/l10n/<lang>/LC_MESSAGES/messages.mo`,
+  with the repository's `LICENSE` beside them and in `licenses/seedsigner-translations.LICENSE`
+
+The repository holds `.po` sources; SeedSigner compiles them at build time with
+Babel's `compile_catalog`, fuzzy entries kept, and so does
+`build/build-firmware-zip.sh`. **Babel 2.18.0 (BSD-3-Clause)** is fetched for that
+as one wheel pinned by sha256 in the build script, and runs on the builder only:
+none of it is in the zip or served.
+
+The repository's fonts are not in the zip. They are served beside it, in
+`fonts-<hash>/`, and fetched by the worker the first time the firmware draws one,
+each checked against the sha256 the zip's `deferred-fonts.json` gives it:
+
+| Served as | Licence | Licence text |
+| --- | --- | --- |
+| `fonts-<hash>/NotoSansAR-Regular.ttf`, `NotoSansJP-Regular.ttf`, `NotoSansKR-Regular.ttf`, `NotoSansSC-Regular.ttf`, `NotoSansTH-Regular.ttf` | OFL-1.1 (Noto, Google) | named in the fonts' metadata; text in `src/web/licenses/OFL-1.1.txt` |
 
 To check the copy in a built zip against upstream directly:
 

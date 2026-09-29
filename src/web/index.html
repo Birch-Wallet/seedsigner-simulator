@@ -483,6 +483,8 @@
             <dt>Tag</dt><dd><a id="build-tag" rel="noopener"></a></dd>
             <dt>Commit</dt><dd><a id="build-commit" class="hash" rel="noopener"></a></dd>
             <dt>Interpreter</dt><dd>Pyodide <span id="build-pyodide"></span>, CPython compiled to WebAssembly</dd>
+            <dt>Translations</dt><dd><a id="build-translations" class="hash" rel="noopener"></a>
+              <span id="build-languages"></span></dd>
           </dl>
           <p>The firmware is pinned to a published SeedSigner release, by tag and
           by commit, rather than to a branch. A branch moves and can be rewritten
@@ -616,6 +618,24 @@ if ("serviceWorker" in navigator) {
 // ?debug=1 puts the firmware's narration on the console, which is what the tests read.
 const DEBUG = new URLSearchParams(location.search).has("debug");
 const BITCOIN_NETWORK = new URLSearchParams(location.search).get("network") === "mainnet" ? "M" : "T";
+// Whether the URL chose the network, which then wins over a saved setting.
+const NETWORK_EXPLICIT = new URLSearchParams(location.search).has("network");
+
+// The firmware's Persistent Settings, kept where a device keeps them: on its
+// microSD card there, in this browser's storage here. Only ever the settings
+// file the firmware itself writes, and only while that setting is on; turning
+// it off erases it. Storage can be missing or refuse (a private window), and
+// then the firmware simply starts from its defaults, as it always has.
+const SETTINGS_KEY = "seedsigner-sim:settings";
+function readSavedSettings() {
+  try { return localStorage.getItem(SETTINGS_KEY) || ""; } catch (e) { return ""; }
+}
+function writeSavedSettings(text) {
+  try {
+    if (text) localStorage.setItem(SETTINGS_KEY, text);
+    else localStorage.removeItem(SETTINGS_KEY);
+  } catch (e) { /* no storage here: the settings last as long as the page */ }
+}
 // Which hardware: the SeedSigner Plus's 320x240, or the original Waveshare hat's
 // 240x240. The firmware lays every screen out for its panel at boot, so this is
 // read once and changing it means starting the firmware again.
@@ -735,6 +755,17 @@ function fillPanel(info) {
             web + "/releases/tag/" + encodeURIComponent(info.upstream.tag));
   panelLink("build-commit", info.upstream.commit, web + "/commit/" + info.upstream.commit);
   panelText("build-pyodide", info.pyodide);
+  // Upstream's own submodule, at the commit upstream's tree pins. Absent from a
+  // build of a tree that has none, which then speaks English only.
+  if (info.translations) {
+    const tweb = info.translations.repo.replace(/\.git$/, "");
+    panelLink("build-translations", info.translations.commit,
+              tweb + "/commit/" + info.translations.commit);
+    panelText("build-languages", "(" + info.translations.languages.length
+                                 + " languages besides English)");
+  } else {
+    panelText("build-languages", "none in this build: English only");
+  }
   panelText("build-zip", info.zip.name);
   panelText("build-contents", info.zip.published_contents_sha256);
   publishedHash = info.zip.published_sha256;
@@ -1166,6 +1197,10 @@ function startSimulator() {
     } else if (type === "zip-sha256") {
       receivedHash = event.data.sha256;
       showVerdict();
+    } else if (type === "settings-saved") {
+      writeSavedSettings(event.data.text);
+    } else if (type === "settings-erased") {
+      writeSavedSettings("");
     } else if (type === "network") {
       // The firmware's own settings, read back out of them by the worker.
       networkEl.textContent = event.data.name;
@@ -1189,6 +1224,7 @@ function startSimulator() {
   worker.postMessage({
     type: "init", sharedBuffer: shared, cameraBuffer, tickBuffer: tickBuffer.buffer,
     width: W, height: H, debug: DEBUG, bitcoinNetwork: BITCOIN_NETWORK,
+    networkExplicit: NETWORK_EXPLICIT, savedSettings: readSavedSettings(),
   });
 }
 

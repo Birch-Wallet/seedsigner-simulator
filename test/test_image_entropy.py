@@ -52,11 +52,42 @@ def main() -> int:
                  "the live preview")
         check("the camera opens for the preview", True)
 
-        # Select takes the picture, which is the call that used to raise.
+        # The preview fills the screen. The firmware asks for a square as big as
+        # the screen's longer side and crops its middle to the screen; handed a
+        # smaller square it cropped a strip and drew it down the left, and the
+        # rest of a 320x240 screen was not the camera at all. Chrome's fake
+        # camera is one flat colour behind a turning shape, so the band across
+        # the middle of the left third and of the right third should agree.
         page.wait_for_timeout(2000)
-        press(page, "Enter", gap=3000)
-        log.wait(r"display\(\) enter: ToolsImageEntropyFinalImageScreen", 90,
-                 "the picture it took")
+        thirds = page.evaluate("""() => {
+          const canvas = document.getElementById('screen');
+          const ctx = canvas.getContext('2d');
+          const w = canvas.width, h = canvas.height, third = Math.floor(w / 3);
+          const mean = (x0) => {
+            const d = ctx.getImageData(x0, 30, third, 40).data, sum = [0, 0, 0];
+            for (let i = 0; i < d.length; i += 4) for (let c = 0; c < 3; c++) sum[c] += d[i + c];
+            return sum.map((v) => v / (d.length / 4));
+          };
+          return { w, h, left: mean(0), right: mean(w - third) };
+        }""")
+        apart = max(abs(a - b) for a, b in zip(thirds["left"], thirds["right"]))
+        check("the preview fills the screen, not a strip down its left",
+              thirds["w"] == 320 and apart < 24,
+              f"{thirds['w']}x{thirds['h']}: left third "
+              f"{[round(v) for v in thirds['left']]}, right third "
+              f"{[round(v) for v in thirds['right']]}")
+
+        # Select takes the picture, which is the call that used to raise. Newer
+        # firmware first fills a pool of distinct preview frames and ignores
+        # Select until it is full, as a person watching its progress bar would
+        # wait; so Select is pressed again until the picture is taken.
+        page.wait_for_timeout(2000)
+        final = r"display\(\) enter: ToolsImageEntropyFinalImageScreen"
+        for _ in range(10):
+            press(page, "Enter", gap=3000)
+            if log.seen(final):
+                break
+        log.wait(final, 90, "the picture it took")
         check("it takes a still and shows it back", True)
 
         harness.save_screen(page, SHOT)

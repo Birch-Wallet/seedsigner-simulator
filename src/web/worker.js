@@ -19,6 +19,10 @@ let debug = false;    // ?debug=1 on the page; otherwise js_log says nothing
 
 // "M" mainnet or "T" testnet — matches SettingsConstants in the firmware zip.
 let bitcoinNetwork = "T";
+// Whether the URL chose that network, and the settings file the page kept from a
+// previous visit, if Persistent Settings was on (see index.html).
+let networkExplicit = false;
+let savedSettings = "";
 
 const STATE = 0;
 const KEYCODE = 1;
@@ -40,6 +44,8 @@ self.onmessage = async (event) => {
     camera = CameraChannel.forWorker(event.data.cameraBuffer);
     debug = !!event.data.debug;
     if (event.data.bitcoinNetwork) bitcoinNetwork = event.data.bitcoinNetwork;
+    networkExplicit = !!event.data.networkExplicit;
+    savedSettings = typeof event.data.savedSettings === "string" ? event.data.savedSettings : "";
     try {
       await boot(event.data.width, event.data.height);
     } catch (error) {
@@ -114,6 +120,27 @@ async function boot(width, height) {
     self.postMessage({ type: "network", name: String(name), mainnet: !!mainnet });
   });
 
+  // One file off this origin, whole, or null. Synchronous, because the firmware
+  // asks for a font in the middle of drawing and the worker cannot come back to
+  // its event loop to wait; a worker is allowed a synchronous request.
+  pyodide.globals.set("js_fetch_bytes", (url) => {
+    const request = new XMLHttpRequest();
+    request.open("GET", url, false);
+    request.responseType = "arraybuffer";
+    try {
+      request.send();
+    } catch (error) {
+      return null;
+    }
+    return request.status === 200 ? new Uint8Array(request.response) : null;
+  });
+
+  // The firmware's settings file, for the page to keep (text) or forget (empty).
+  pyodide.globals.set("js_settings_file", (text) => {
+    const kept = String(text || "");
+    self.postMessage(kept ? { type: "settings-saved", text: kept } : { type: "settings-erased" });
+  });
+
   // Whether a press is waiting, without taking it.
   pyodide.globals.set("js_key_pending", () => Atomics.load(keyBuffer, STATE) !== 0);
 
@@ -148,7 +175,7 @@ async function boot(width, height) {
   // to send one.
   pyodide.setInterruptBuffer(tickBuffer);
 
-  pyodide.runPython(shims(width, height, bitcoinNetwork));
+  pyodide.runPython(shims(width, height, bitcoinNetwork, networkExplicit, savedSettings));
   post("ready", {});
 
   // Blocks for the lifetime of the worker. This is the whole reason the firmware
@@ -171,7 +198,7 @@ except BaseException:
   }
 }
 
-function shims(width, height, network) {
+function shims(width, height, network, explicit, saved) {
   const net = JSON.stringify(network || "T");
   return `
 import sys, json, threading
@@ -213,13 +240,28 @@ sys.path.insert(0, "/firmware")
 #   network         Mainnet when the page asks for ?network=mainnet; otherwise
 #                   testnet. Still changeable in Settings on hardware.
 #
+# With Persistent Settings on, the file the firmware last saved is kept by the
+# page, and it comes back here as the starting point, the way a device finds its
+# own on the microSD card. The panel the page is showing always wins over it,
+# and so does a network the URL names.
+#
 # Every key and value here is a SettingsConstants: SETTING__DISPLAY_CONFIGURATION,
 # SETTING__NETWORK and TESTNET.
 import os, json
 os.chdir("/firmware")
-_settings = {"display_config": ${JSON.stringify(width === 240 && height === 240
-                                              ? "st7789_240x240" : "st7789_320x240")},
-             "network": ${net}}
+_settings = {}
+_saved = ${JSON.stringify(saved || "")}
+if _saved:
+    try:
+        _restored = json.loads(_saved)
+        if isinstance(_restored, dict):
+            _settings.update(_restored)
+    except ValueError as exc:
+        js_log(f"saved settings unreadable, starting from defaults: {exc}")
+_settings["display_config"] = ${JSON.stringify(width === 240 && height === 240
+                                             ? "st7789_240x240" : "st7789_320x240")}
+if ${explicit ? "True" : "False"} or "network" not in _settings:
+    _settings["network"] = ${net}
 with open("/firmware/settings.json", "w") as handle:
     json.dump(_settings, handle)
 
@@ -341,6 +383,67 @@ def _call(cmd, *args, **kwargs):
 subprocess.call = _call
 for _name in ("run", "check_call", "check_output", "Popen"):
     setattr(subprocess, _name, _no_such_binary)
+
+# os.popen goes through a shell, and a shell whose command is not found says so
+# on stderr and exits 127: whoever reads its stdout reads nothing, and nothing
+# is raised. SeedSigner's version helpers count on exactly that when they ask
+# git for a branch, tag or commit off a device, and fall back when the answer
+# is empty; os.popen on top of the Popen above raised instead, and the firmware
+# died on its splash screen.
+import io
+import os
+
+class _NothingRan(io.StringIO):
+    def close(self):
+        super().close()
+        return 127 << 8        # os.popen's close(): the shell's wait status
+
+def _popen(cmd, mode="r", buffering=-1):
+    return _NothingRan("")
+
+os.popen = _popen
+
+# --- fonts for the other languages, fetched when first opened ----------------
+# The firmware opens every font through Fonts.get_font, looking in its own fonts
+# and then in seedsigner-translations/fonts, where upstream keeps the ones for
+# Chinese, Japanese, Korean, Arabic and Thai. Those are some 22MB, so the build
+# serves them beside the zip rather than in it (build/build-firmware-zip.sh),
+# and the zip's deferred-fonts.json names each with its sha256. The first time
+# the firmware asks for one it is fetched, checked against that hash, and put
+# where the firmware was going to look; from then on it is an ordinary file.
+import hashlib as _hashlib
+
+_FONTS_HOME = "/firmware/seedsigner/resources/seedsigner-translations/fonts"
+try:
+    with open("/firmware/deferred-fonts.json") as _handle:
+        _deferred_fonts = json.load(_handle)
+except FileNotFoundError:
+    _deferred_fonts = {"dir": None, "fonts": {}}
+
+def _fetch_deferred_font(filename, expected):
+    url = f"{_deferred_fonts['dir']}/{filename}"
+    data = js_fetch_bytes(url)
+    if data is None:
+        raise OSError(f"could not fetch the font {url}")
+    body = data.to_bytes()
+    actual = _hashlib.sha256(body).hexdigest()
+    if actual != expected:
+        raise OSError(f"{url} is not the font the firmware zip names: "
+                      f"sha256 {actual}, expected {expected}")
+    os.makedirs(_FONTS_HOME, exist_ok=True)
+    with open(os.path.join(_FONTS_HOME, filename), "wb") as handle:
+        handle.write(body)
+    js_log(f"font fetched: {filename} ({len(body)} bytes, sha256 verified)")
+
+from seedsigner.gui.components import Fonts as _Fonts
+_orig_get_font = _Fonts.get_font.__func__
+def _get_font(cls, font_name, size, file_extension="ttf"):
+    filename = f"{font_name}.{file_extension}"
+    expected = _deferred_fonts["fonts"].get(filename)
+    if expected and not os.path.exists(os.path.join(_FONTS_HOME, filename)):
+        _fetch_deferred_font(filename, expected)
+    return _orig_get_font(cls, font_name, size, file_extension)
+_Fonts.get_font = classmethod(_get_font)
 
 # --- draw to the page instead of a panel -------------------------------------
 import browser_display
@@ -465,7 +568,7 @@ HardwareButtons.trigger_override = lambda self, force_release=False: None
 
 # --- the camera, and the QR decode, both come from the page -------------------
 import browser_camera
-browser_camera.install(js_camera)
+browser_camera.install(js_camera, max(${width}, ${height}))
 
 js_report_size(renderer.canvas_width, renderer.canvas_height)
 
@@ -614,9 +717,39 @@ def _report_network():
     except Exception as exc:
         js_log(f"network report failed: {type(exc).__name__}: {exc}")
 
+# --- Persistent Settings, kept by the page --------------------------------------
+# Off SeedSigner OS the firmware counts the microSD as always inserted and keeps
+# its settings in settings.json in the working directory, which here is memory
+# that a reload wipes. So every file the firmware saves is handed to the page to
+# keep, and when Persistent Settings is turned off -- the firmware deletes the
+# file itself -- the page forgets it too. Only the file the firmware wrote is
+# ever sent, and only while the setting is on; nothing is inferred from it.
+# The file the firmware loaded at boot is not sent back -- it was read before
+# this is installed -- so a panel or network the URL chose for one visit is kept
+# only if a setting is then changed during that visit.
+def _send_settings_file(text):
+    js_settings_file(text)
+
+_orig_save = Settings.save
+def _kept_save(self, *args, **kwargs):
+    result = _orig_save(self, *args, **kwargs)
+    try:
+        if (self._data.get(SettingsConstants.SETTING__PERSISTENT_SETTINGS)
+                == SettingsConstants.OPTION__ENABLED
+                and os.path.exists(Settings.SETTINGS_FILENAME)):
+            with open(Settings.SETTINGS_FILENAME) as handle:
+                _send_settings_file(handle.read())
+    except Exception as exc:
+        js_log(f"keeping settings failed: {type(exc).__name__}: {exc}")
+    return result
+Settings.save = _kept_save
+
 _orig_set_value = Settings.set_value
-def _traced_set_value(self, *args, **kwargs):
-    result = _orig_set_value(self, *args, **kwargs)
+def _traced_set_value(self, attr_name, value, *args, **kwargs):
+    result = _orig_set_value(self, attr_name, value, *args, **kwargs)
+    if (attr_name == SettingsConstants.SETTING__PERSISTENT_SETTINGS
+            and value == SettingsConstants.OPTION__DISABLED):
+        _send_settings_file("")
     _report_network()
     return result
 Settings.set_value = _traced_set_value

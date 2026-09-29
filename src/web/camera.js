@@ -20,14 +20,17 @@
   var FRAME_H = 4;
   var QR_LEN = 5;      // >0 while a decoded payload is waiting to be claimed
   var ERR_LEN = 6;
+  var SIDE = 7;        // the preview's side the firmware asked for. Written by the worker.
 
   var STATES = { IDLE: 0, STARTING: 1, RUNNING: 2, FAILED: 3 };
 
-  // The preview only ever lands on a 320x240 canvas, and every byte of it is
+  // The preview is a square, at the side the firmware asked for when it opened
+  // the camera, and never larger than the screen it lands on: every byte of it is
   // copied into a PIL image on the Python side, so it is published small. The
   // decode runs against the full capture instead, where the QR is still sharp.
-  var PREVIEW_W = 240;
-  var PREVIEW_H = 240;
+  // Asked for nothing, it is DEFAULT_SIDE.
+  var DEFAULT_SIDE = 240;
+  var MAX_SIDE = 320;
   var CAPTURE_W = 640;
   var CAPTURE_H = 480;
 
@@ -47,7 +50,7 @@
   var ERR_OFFSET = QR_OFFSET + QR_MAX;
   var ERR_MAX = 256;
   var FRAME_OFFSET = ERR_OFFSET + ERR_MAX;
-  var TOTAL_BYTES = FRAME_OFFSET + PREVIEW_W * PREVIEW_H * 3;
+  var TOTAL_BYTES = FRAME_OFFSET + MAX_SIDE * MAX_SIDE * 3;
 
   // ~15fps. The Python decode loop is slower than this, so the page is never the
   // bottleneck and frames it publishes in between are simply overwritten.
@@ -374,7 +377,7 @@
         });
       }).then(function () {
         capture = makeCanvas(CAPTURE_W, CAPTURE_H);
-        preview = makeCanvas(PREVIEW_W, PREVIEW_H);
+        preview = makeCanvas(MAX_SIDE, MAX_SIDE);
         return makeDecoder();
       }).then(function (ready) {
         decoder = ready;
@@ -397,17 +400,29 @@
     function frameW() { return video ? video.videoWidth : 0; }
     function frameH() { return video ? video.videoHeight : 0; }
 
+    function previewSide() {
+      var side = Atomics.load(hdr, SIDE);
+      return side > 0 ? Math.min(side, MAX_SIDE) : DEFAULT_SIDE;
+    }
+
     function publishFrame() {
-      preview.ctx.drawImage(frameSource(), 0, 0, PREVIEW_W, PREVIEW_H);
-      var rgba = preview.ctx.getImageData(0, 0, PREVIEW_W, PREVIEW_H).data;
-      var rgb = new Uint8Array(sab, FRAME_OFFSET, PREVIEW_W * PREVIEW_H * 3);
+      // The largest centred square of the video, scaled rather than squeezed.
+      // SeedSigner crops the square it asked for down to its screen itself, and a
+      // squeeze would bend any stream that is not square -- a phone's camera can
+      // arrive portrait whichever way the phone is held.
+      var side = previewSide();
+      var w = frameW(), h = frameH(), crop = Math.min(w, h);
+      preview.ctx.drawImage(frameSource(), (w - crop) / 2, (h - crop) / 2, crop, crop,
+                            0, 0, side, side);
+      var rgba = preview.ctx.getImageData(0, 0, side, side).data;
+      var rgb = new Uint8Array(sab, FRAME_OFFSET, side * side * 3);
       for (var src = 0, dst = 0; src < rgba.length; src += 4, dst += 3) {
         rgb[dst] = rgba[src];
         rgb[dst + 1] = rgba[src + 1];
         rgb[dst + 2] = rgba[src + 2];
       }
-      Atomics.store(hdr, FRAME_W, PREVIEW_W);
-      Atomics.store(hdr, FRAME_H, PREVIEW_H);
+      Atomics.store(hdr, FRAME_W, side);
+      Atomics.store(hdr, FRAME_H, side);
       // Bumped last: the sequence number is what tells the worker the bytes above
       // are worth reading. A frame can still tear if the worker reads mid-write,
       // which shows up as a seam in the preview and nowhere else, because the
@@ -466,7 +481,10 @@
 
     return {
       // Returns "" once the camera is delivering, or the reason it is not.
-      start: function (timeoutMs) {
+      // `side` is the square preview to publish, in pixels; 0 or absent is the
+      // default.
+      start: function (timeoutMs, side) {
+        Atomics.store(hdr, SIDE, side > 0 ? side : 0);
         if (Atomics.load(hdr, STATE) === STATES.FAILED) {
           // Clear a previous failure so the page tries again rather than
           // answering with a stale one.

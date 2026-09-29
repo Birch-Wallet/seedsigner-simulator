@@ -10,8 +10,10 @@
 # The point of this script is that you do not have to trust the zip that is
 # being served to you. Run it, and compare its sha256 to the one you downloaded.
 # If they match, the served zip is exactly the pinned upstream SeedSigner tree
-# plus the pinned pure-Python dependencies plus this repository's own stand-in
-# packages for the hardware it cannot have, and nothing else.
+# plus its translations, compiled from the commit that tree pins for them, plus
+# the pinned pure-Python dependencies plus this repository's own stand-in
+# packages for the hardware it cannot have, plus deferred-fonts.json naming the
+# fonts served beside it by hash, and nothing else.
 #
 #   ./build/build-firmware-zip.sh
 #   sha256sum some-downloaded-seedsigner-stock.zip
@@ -179,6 +181,7 @@ DEPS
 EXPECTED_TOP_LEVEL=(
     LICENSE.md
     RPi
+    deferred-fonts.json
     embit
     licenses
     main.py
@@ -187,6 +190,14 @@ EXPECTED_TOP_LEVEL=(
     seedsigner
     urtypes
 )
+
+# The translations are .po sources upstream compiles at build time, with Babel's
+# compile_catalog and use_fuzzy (upstream's setup.cfg). The same tool, at one
+# pinned artifact, compiles them here. It is a build tool only: it runs on the
+# builder, out of its unpacked wheel, and none of it reaches the zip. A wheel is
+# pure Python and runs as unpacked, so nothing is installed and pip is not run.
+BABEL_URL="https://files.pythonhosted.org/packages/77/f5/21d2de20e8b8b0408f0681956ca2c69f1320a3848ac50e6e7f39c6159675/babel-2.18.0-py3-none-any.whl"
+BABEL_SHA256="e2b422b277c2b9a9630c1d7903c2a00d0830c409c59ac8cae9081c92f1aeba35"
 
 # Two import-time stand-ins. See src/fakes/README.md for what they are and are not. Rows are
 # source:name-in-the-zip:what the licences manifest should call it.
@@ -464,6 +475,20 @@ for required in src/seedsigner src/main.py LICENSE.md; do
     [ -e "${UPSTREAM_SRC}/${required}" ] || die "the tree at ${UPSTREAM_COMMIT} is missing ${required}"
 done
 
+# Upstream's translations are a git submodule, and the commit it points at is
+# part of upstream's own tree: the pin already pins them, so nothing new is
+# pinned here. Read before .git goes below. A tree with no submodule there
+# builds English only, as the firmware does without it.
+TRANSLATIONS_PATH="src/seedsigner/resources/seedsigner-translations"
+TRANSLATIONS_COMMIT="$(git -C "${UPSTREAM_SRC}" ls-tree HEAD "${TRANSLATIONS_PATH}" \
+    | awk '$2 == "commit" { print $3 }')"
+TRANSLATIONS_REPO=""
+if [ -n "${TRANSLATIONS_COMMIT}" ]; then
+    TRANSLATIONS_REPO="$(git config -f "${UPSTREAM_SRC}/.gitmodules" \
+        --get "submodule.${TRANSLATIONS_PATH}.url" || true)"
+    [ -n "${TRANSLATIONS_REPO}" ] || die "the tree at ${UPSTREAM_COMMIT} pins ${TRANSLATIONS_PATH} but .gitmodules names no url for it"
+fi
+
 # ---------------------------------------------------------------------------
 # 2. Timestamp
 # ---------------------------------------------------------------------------
@@ -493,6 +518,89 @@ cp    -- "${UPSTREAM_SRC}/src/main.py"    "${STAGING}/main.py"
 # The MIT notice travels with the code it covers.
 cp    -- "${UPSTREAM_SRC}/LICENSE.md"     "${STAGING}/LICENSE.md"
 cp    -- "${UPSTREAM_SRC}/LICENSE.md"     "${STAGING}/licenses/SeedSigner.LICENSE"
+
+# ---------------------------------------------------------------------------
+# 2b. The translations: upstream's submodule, at the commit upstream pins
+# ---------------------------------------------------------------------------
+#
+# What the firmware looks for: seedsigner-translations/l10n/<lang>/LC_MESSAGES/
+# messages.mo under its resources, and any fonts it needs for a script its own
+# fonts lack under seedsigner-translations/fonts. A language is offered only if
+# its .mo is there (SettingsConstants.get_detected_languages).
+#
+# The .mo files go in the zip, compiled here as upstream compiles them. The
+# fonts do not: the ones for Chinese, Japanese, Korean, Arabic and Thai come to
+# some 22MB, most visitors never change language, and the zip is downloaded
+# again whenever it changes. So they are published beside it in a directory
+# named by a hash of what is in it, and deferred-fonts.json in the zip names each
+# one with its sha256. The worker fetches a font the first time the firmware
+# opens it and refuses one that does not hash to what the zip says.
+
+TRANSLATION_LANGUAGES=""
+FONTS_DIR_NAME=""
+FONTS_SRC=""
+if [ -n "${TRANSLATIONS_COMMIT}" ]; then
+    step "translations ${TRANSLATIONS_REPO} @ ${TRANSLATIONS_COMMIT}"
+    TRANSLATIONS_SRC="${SOURCES}/translations"
+    git_checkout "${TRANSLATIONS_REPO}" "${TRANSLATIONS_COMMIT}" "${TRANSLATIONS_SRC}"
+    rm -rf -- "${TRANSLATIONS_SRC}/.git"
+    [ -d "${TRANSLATIONS_SRC}/l10n" ] || die "the translations at ${TRANSLATIONS_COMMIT} have no l10n directory"
+
+    step "babel 2.18.0, to compile them"
+    babel_dir="${SOURCES}/babel"
+    mkdir -p "${babel_dir}"
+    fetch_verified "${BABEL_URL}" "${BABEL_SHA256}" "${babel_dir}/${BABEL_URL##*/}"
+    unpack "${babel_dir}/${BABEL_URL##*/}" "${babel_dir}/unpacked"
+
+    # Upstream's own settings: messages domain, fuzzy entries kept. Quiet, because
+    # it narrates every catalogue it writes.
+    PYTHONPATH="${babel_dir}/unpacked" PYTHONDONTWRITEBYTECODE=1 \
+        python3 -c 'import sys; from babel.messages.frontend import main; sys.exit(main())' \
+        --quiet compile --use-fuzzy --domain messages --directory "${TRANSLATIONS_SRC}/l10n" \
+        || die "babel could not compile the translations"
+
+    staged_translations="${STAGING}/seedsigner/resources/seedsigner-translations"
+    mkdir -p "${staged_translations}"
+    while IFS= read -r mo; do
+        rel="${mo#"${TRANSLATIONS_SRC}/"}"
+        mkdir -p "${staged_translations}/$(dirname -- "${rel}")"
+        cp -- "${mo}" "${staged_translations}/${rel}"
+    done < <(find "${TRANSLATIONS_SRC}/l10n" -type f -name 'messages.mo' | LC_ALL=C sort)
+
+    TRANSLATION_LANGUAGES="$( (cd -- "${staged_translations}/l10n" && find . -mindepth 1 -maxdepth 1 -type d) \
+        | sed 's|^\./||' | LC_ALL=C sort | tr '\n' ' ')"
+    [ -n "${TRANSLATION_LANGUAGES}" ] || die "no messages.mo came out of the translations"
+    step "languages: ${TRANSLATION_LANGUAGES}"
+
+    translations_license="$(find_license "${TRANSLATIONS_SRC}")"
+    [ -n "${translations_license}" ] || die "the translations carry no licence file; refusing to redistribute them"
+    cp -- "${translations_license}" "${staged_translations}/LICENSE"
+    cp -- "${translations_license}" "${STAGING}/licenses/seedsigner-translations.LICENSE"
+
+    [ ! -d "${TRANSLATIONS_SRC}/fonts" ] || FONTS_SRC="${TRANSLATIONS_SRC}/fonts"
+fi
+
+# The fonts' names and hashes, and the directory named by them. Written even
+# when there are none, so the zip always has the same shape.
+FONTS_DIR_NAME="$(python3 - "${FONTS_SRC}" "${STAGING}/deferred-fonts.json" <<'PY'
+import hashlib, json, os, sys
+
+source, out = sys.argv[1], sys.argv[2]
+fonts = {}
+if source:
+    for name in sorted(os.listdir(source)):
+        if name.lower().endswith((".ttf", ".otf")):
+            with open(os.path.join(source, name), "rb") as handle:
+                fonts[name] = hashlib.sha256(handle.read()).hexdigest()
+listing = "".join(f"{digest}  {name}\n" for name, digest in sorted(fonts.items()))
+directory = ("fonts-" + hashlib.sha256(listing.encode("utf-8")).hexdigest()[:8]) if fonts else None
+with open(out, "w", encoding="utf-8") as handle:
+    json.dump({"dir": directory, "fonts": fonts}, handle, indent=2, sort_keys=True)
+    handle.write("\n")
+print(directory or "")
+PY
+)"
+[ -z "${FONTS_DIR_NAME}" ] || step "fonts, served beside the zip from ${FONTS_DIR_NAME}/"
 
 # ---------------------------------------------------------------------------
 # 3. This repository's stand-in packages
@@ -536,6 +644,9 @@ MANIFEST="${WORK_DIR}/licenses-manifest.txt"
     echo
     printf '%-22s %-26s %s\n' "MODULE" "DISTRIBUTION" "RELEASE"
     printf '%-22s %-26s %s\n' "seedsigner, main.py" "SeedSigner" "commit ${UPSTREAM_COMMIT}"
+    if [ -n "${TRANSLATIONS_COMMIT}" ]; then
+        printf '%-22s %-26s %s\n' "seedsigner .mo files" "seedsigner-translations" "commit ${TRANSLATIONS_COMMIT}"
+    fi
     printf '%s' "${MANIFEST_STAGED}"
 } > "${MANIFEST}"
 
@@ -698,6 +809,17 @@ print(f"    zip       sha256 {zip_digest}")
 print(f"    contents  sha256 {hashlib.sha256(manifest_text.encode('utf-8')).hexdigest()}")
 PY
 
+# The deferred fonts, beside the zip, under the name deferred-fonts.json gives
+# them. Any older fonts-* directory goes: it belonged to another build.
+find "${OUT_DIR}" -mindepth 1 -maxdepth 1 -type d -name 'fonts-*' -exec rm -rf -- {} +
+if [ -n "${FONTS_DIR_NAME}" ]; then
+    mkdir -p "${OUT_DIR}/${FONTS_DIR_NAME}"
+    for font in "${FONTS_SRC}"/*; do
+        case "${font}" in *.ttf|*.otf|*.TTF|*.OTF) cp -- "${font}" "${OUT_DIR}/${FONTS_DIR_NAME}/" ;; esac
+    done
+    step "wrote ${OUT_DIR}/${FONTS_DIR_NAME}/"
+fi
+
 if [ "${KEEP_STAGING}" = "yes" ]; then
     rm -rf -- "${OUT_DIR}/staging-${FIRMWARE}"
     cp -R -- "${STAGING}" "${OUT_DIR}/staging-${FIRMWARE}"
@@ -713,7 +835,8 @@ fi
 # Pyodide interprets it. That description has to be produced by the build, not
 # maintained beside it, or it becomes one more thing that can drift and be wrong
 # exactly when someone is checking. Every field below is read out of UPSTREAM,
-# out of the dependency table in this file, or out of build/fetch-assets.sh.
+# out of the dependency table in this file, out of build/fetch-assets.sh, or out
+# of what the translations step above found in upstream's tree and compiled.
 #
 # Beside the zip and not inside it: the zip's bytes are the thing being
 # compared, and nothing added here may touch them.
@@ -775,7 +898,10 @@ INFO_OVERRIDDEN="${OVERRIDDEN}" \
 INFO_PINNED_REPO="${PINNED_REPO}" \
 INFO_PINNED_COMMIT="${PINNED_COMMIT}" \
 INFO_BUILT_SHA256="$(sha256_of "${OUT_ZIP}")" \
-python3 - "${OUT_INFO}" <<'PY'
+INFO_TRANSLATIONS_REPO="${TRANSLATIONS_REPO}" \
+INFO_TRANSLATIONS_COMMIT="${TRANSLATIONS_COMMIT}" \
+INFO_LANGUAGES="${TRANSLATION_LANGUAGES}" \
+python3 - "${OUT_INFO}" "${STAGING}/deferred-fonts.json" <<'PY'
 import json
 import os
 import sys
@@ -805,6 +931,18 @@ info = {
     "pyodide": os.environ["INFO_PYODIDE"],
     "dependencies": dependencies,
 }
+
+# The translations, which upstream's own tree pins, and the fonts served beside
+# the zip for them, with the hashes the zip's deferred-fonts.json holds them to.
+if os.environ["INFO_TRANSLATIONS_COMMIT"]:
+    with open(sys.argv[2], encoding="utf-8") as handle:
+        deferred = json.load(handle)
+    info["translations"] = {
+        "repo": os.environ["INFO_TRANSLATIONS_REPO"],
+        "commit": os.environ["INFO_TRANSLATIONS_COMMIT"],
+        "languages": os.environ["INFO_LANGUAGES"].split(),
+        "fonts": deferred,
+    }
 
 # Only on an override, so a build from the pin writes what it always wrote. The
 # two hashes above stay the published ones on purpose: they are what a reader is
@@ -836,6 +974,7 @@ echo
 echo "  ${OUT_ZIP}"
 echo "  ${OUT_MANIFEST}"
 echo "  ${OUT_INFO}"
+[ -z "${FONTS_DIR_NAME}" ] || echo "  ${OUT_DIR}/${FONTS_DIR_NAME}/"
 echo
 
 if [ "${OVERRIDDEN}" = "yes" ]; then

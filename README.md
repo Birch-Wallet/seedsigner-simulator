@@ -16,6 +16,11 @@ cut down to stock SeedSigner alone, and extended:
   warning edges, scrolling labels, the PSBT overview, animated QRs and the camera
   preview. Toast threads are supported too, though stock firmware only raises
   microSD toasts, which never appear here.
+- **Every language.** All 21 of SeedSigner's translations, from Settings >
+  Language, with the fonts Chinese, Japanese, Korean, Arabic and Thai need
+  fetched the first time they are drawn.
+- **Persistent Settings.** The firmware's own setting: on, your settings are
+  kept in this browser across reloads; off, the saved copy is erased.
 - **Recording.** An MP4 of the session, the screen alone or the whole device
   centred on a dark or light background, made in the browser.
 - **Mobile first.** One control bar under the device, landscape on phones with a
@@ -59,9 +64,11 @@ everything it shows you as public: seeds, passphrases, xpubs, descriptors,
 signatures.
 
 **If you already entered a real seed here**, treat it as compromised and move the
-funds to a new seed generated on a device you trust. The simulator transmits and
-stores nothing, but it ran in a browser on a networked machine, alongside every
-extension and every other tab. Do not weigh the odds; just move.
+funds to a new seed generated on a device you trust. The simulator transmits
+nothing and stores nothing, except your settings in this browser if you turn on
+Persistent Settings (never a seed: the firmware's settings file holds none). But
+it ran in a browser on a networked machine, alongside every extension and every
+other tab. Do not weigh the odds; just move.
 
 Good for learning the menus, rehearsing a flow, or testing screens. Anything
 involving money belongs on hardware.
@@ -100,7 +107,8 @@ needs editing too.
 
 - **It is the firmware, not a re-creation.** `seedsigner-stock.zip` holds SeedSigner's
   upstream Python tree and its own `Controller.start()` runs it. Menus, seed
-  handling, PSBT parsing, QR encoders: all theirs.
+  handling, PSBT parsing, QR encoders, translations: all theirs, the translations
+  at the commit upstream's own tree pins for them.
 - **SeedSigner's own files are unmodified.** Everything this port changes happens
   at runtime, in [`worker.js`](src/web/worker.js), [`src/shims/`](src/shims) and
   [`src/fakes/`](src/fakes). That code runs with full access to the firmware and
@@ -119,7 +127,9 @@ needs editing too.
 ## What works, and what does not
 
 **Works.** The full menu tree, seed loading by QR or by hand, passphrases, xpub
-export, PSBT signing, SeedQR backup, settings, every QR screen. Both screens the
+export, PSBT signing, SeedQR backup, settings, every language, every QR
+screen. Persistent Settings keeps your settings in this browser, as a device
+keeps them on its microSD card, and turning it off erases them. Both screens the
 firmware drives: the SeedSigner Plus at 320×240, or the original Waveshare hat at
 240×240 (the device button, or `?display=240x240`).
 Recording saves an MP4 of the session: the screen alone at twice its own
@@ -139,7 +149,7 @@ camera preview, each taking turns with the firmware on a single thread. Toast
 threads run the same way and close on a key press, though stock firmware only
 raises the microSD toasts, so none appear here.
 
-**Does not.** No microSD, so settings reset on reload, firmware update is gone
+**Does not.** No microSD beyond the settings above, so firmware update is gone
 and no toast is ever shown. The spinner holds still through a single long computation, such as
 the PBKDF2 that turns a mnemonic into a seed, then carries on. No timing, so no wipe timer,
 screensaver or battery reading.

@@ -34,9 +34,14 @@ import browser_threads
 from seedsigner.hardware.camera import Camera, CameraConnectionError
 from seedsigner.models.decode_qr import DecodeQR
 
-# The bridge into the page, supplied by install(). Five calls: start(), stop(),
-# frame(timeout_ms), peekFrame(since_seq) and payload().
+# The bridge into the page, supplied by install(). Five calls:
+# start(timeout_ms, side), stop(), frame(timeout_ms), peekFrame(since_seq) and
+# payload().
 _js = None
+
+# The screen's longer side, supplied by install(): no preview frame is published
+# larger than the screen it is drawn on.
+_screen_side = 320
 
 # The last frame the preview drew, so it only draws a frame once.
 _preview_seq = [0]
@@ -75,16 +80,17 @@ def _start_video_stream_mode(self, resolution=(512, 384), framerate=12, format="
     """
     Ask the page for the camera and wait until it is actually delivering frames.
 
-    `resolution`, `framerate` and `format` are the caller's preferences for a
-    sensor this process does not own; getUserMedia negotiates its own, and the
-    page downscales to a fixed preview size before publishing. Failing to open
+    `framerate` and `format` are the caller's preferences for a sensor this
+    process does not own; getUserMedia negotiates its own. `resolution` is kept:
+    the page publishes the square the caller asked for, capped at the screen and
+    cropped from the middle of the stream rather than squeezed. Failing to open
     the camera raises CameraConnectionError, which is the same error the picamera
     backend raises and which SeedSigner already routes to CameraConnectionErrorView.
     """
     if self._video_stream is not None:
         self.stop_video_stream_mode()
 
-    error = _js.start(_START_WAIT_MS)
+    error = _js.start(_START_WAIT_MS, _preview_side(resolution))
     if error:
         raise CameraConnectionError(str(error))
 
@@ -155,16 +161,15 @@ def _start_single_frame_mode(self, resolution=(720, 480)):
     near it, so patching only the stream left the whole flow on the real
     picamera import.
 
-    `resolution` is the caller's preference for a sensor this process does not
-    own, exactly as in the stream case: the page negotiates its own with
-    getUserMedia and publishes at a fixed size.
+    `resolution` is handled exactly as in the stream case: the page publishes
+    the square asked for, capped at the screen.
     """
     if self._video_stream is not None:
         self.stop_video_stream_mode()
     if self._picamera is not None:
         self.stop_single_frame_mode()
 
-    error = _js.start(_START_WAIT_MS)
+    error = _js.start(_START_WAIT_MS, _preview_side(resolution))
     if error:
         raise CameraConnectionError(str(error))
 
@@ -181,8 +186,8 @@ def _capture_frame(self):
     getUserMedia stream arrives upright, which is the same reason
     read_video_stream does not rotate either.
 
-    It is the published preview frame, so it is the preview's size rather than
-    the resolution asked for. What this image is used for is entropy -- it is
+    It is the published preview frame, so it is capped at the screen's size
+    rather than the full resolution asked for. What this image is used for is entropy -- it is
     hashed, and the sensor noise in it is the point -- and a quarter-megapixel
     of real camera output has far more of that than a seed needs. It is also
     what the visitor is shown, at a size the screen would have scaled it to
@@ -222,16 +227,36 @@ def _extract_qr_data(image, is_binary: bool = False):
     return None if payload is None else _to_bytes(payload)
 
 
-def install(js_camera):
+def _preview_side(resolution):
+    """
+    The square the page publishes for a camera opened at `resolution`.
+
+    The firmware asks for the size it will crop from: the new-seed preview asks
+    for a square as big as the screen's longer side and crops its middle to the
+    screen, taking for granted that what it asked for is what arrives. A smaller
+    square cropped that way is a strip down the left of the screen. Scan resizes
+    whatever it gets, so for it the size is only cost, and it is capped at the
+    screen like everything else.
+    """
+    try:
+        asked = max(int(v) for v in resolution)
+    except (TypeError, ValueError):
+        return 0
+    return max(1, min(asked, _screen_side))
+
+
+def install(js_camera, screen_side=320):
     """
     Point SeedSigner's camera and QR decode at the page.
 
     `js_camera` is the worker's bridge object. Patching the methods rather than
     the class keeps Camera's own singleton and its settings handling, which read
-    camera rotation and device index and work fine as they are.
+    camera rotation and device index and work fine as they are. `screen_side`
+    is the screen's longer side, the largest preview worth publishing.
     """
-    global _js
+    global _js, _screen_side
     _js = js_camera
+    _screen_side = int(screen_side)
 
     Camera.start_video_stream_mode = _start_video_stream_mode
     Camera.read_video_stream = _read_video_stream

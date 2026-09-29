@@ -44,10 +44,14 @@ the display frames, goes the other way as ordinary `postMessage`, because that
 direction still works (see below).
 
 `seedsigner-stock.zip` is the firmware: the `seedsigner` package from the commit
-[`UPSTREAM`](../UPSTREAM) pins, the pure-Python dependencies it needs (embit,
+[`UPSTREAM`](../UPSTREAM) pins, with its translations compiled in from the
+commit that tree pins for them, the pure-Python dependencies it needs (embit,
 qrcode, urtypes), and two import stand-ins, `RPi` and `pyzbar`, so that
 SeedSigner's unguarded imports of hardware libraries succeed (see
-[`src/fakes/README.md`](../src/fakes/README.md)). The zip is fetched and unpacked
+[`src/fakes/README.md`](../src/fakes/README.md)). The fonts a few languages need
+are served beside it in `fonts-<hash>/`, named with their hashes in the zip's
+`deferred-fonts.json`, and fetched only when first drawn (see
+[The rest of the environment](#the-rest-of-the-environment)). The zip is fetched and unpacked
 into Pyodide's in-memory filesystem at `/firmware`, which becomes the working
 directory.
 
@@ -171,12 +175,13 @@ One `SharedArrayBuffer`, laid out in `camera.js`:
 
 | Region | Size | Direction |
 | --- | --- | --- |
-| header (`CMD`, `STATE`, `FRAME_SEQ`, `FRAME_W`, `FRAME_H`, `QR_LEN`, `ERR_LEN`) | 64 B | both |
+| header (`CMD`, `STATE`, `FRAME_SEQ`, `FRAME_W`, `FRAME_H`, `QR_LEN`, `ERR_LEN`, `SIDE`) | 64 B | both |
 | decoded QR payload | 8192 B | page → worker |
 | error string | 256 B | page → worker |
-| preview frame, RGB | 240 × 240 × 3 | page → worker |
+| preview frame, RGB | up to 320 × 320 × 3 | page → worker |
 
-`CMD` is the worker asking for the camera on or off. `STATE` is the page answering
+`CMD` is the worker asking for the camera on or off, and `SIDE` the square
+preview it wants (see [The preview](#the-preview)). `STATE` is the page answering
 (idle / starting / running / failed). The page runs a ~15 fps loop; the Python
 decode loop is slower than that, so frames published in between are simply
 overwritten and the page is never the bottleneck.
@@ -192,8 +197,8 @@ the decoder with repeats of itself.
 ### The path from webcam to seed
 
 1. The page draws the video into a 640×480 capture canvas (full size, where the QR
-   is still sharp) and a 240×240 preview canvas (small, because every byte of it
-   gets copied into a PIL image on the Python side).
+   is still sharp) and a square preview no bigger than the screen (small, because
+   every byte of it gets copied into a PIL image on the Python side).
 2. **zxing-wasm**, zxing-cpp built for WebAssembly, decodes the capture and returns
    `bytes`: the content exactly as encoded, with no character set applied. It does
    this in every browser, in about a millisecond a frame, and finds a QR in a
@@ -250,6 +255,15 @@ The decode loop, on the main stack, parks for each new frame with `frame()`; the
 preview reads with `peekFrame()`, which never waits and never moves the decode
 loop's place. The progress bar for animated QRs, the frame-accepted indicator and
 the translated instructions are all upstream's drawing.
+
+Preview frames are square, at the side the firmware asked for when it opened the
+camera, capped at the screen's longer side: 320 on the Plus, 240 on the hat. The
+new-seed-from-a-photo preview depends on it. It asks for a square as big as the
+screen's longer side and crops the middle to the screen, taking for granted that
+what it asked for arrived; handed a smaller square it drew a strip down the left.
+Scan resizes whatever it gets, so for it the size is only cost. The page takes
+the largest centred square of the video and scales it, never squeezing it, so a
+stream that arrives portrait, as a phone's can, is not bent either.
 
 ## Threads, taking turns
 
@@ -317,6 +331,21 @@ Raspberry Pi. These are small, but each one is a hard failure without it:
   blocks waiting for it to set up storage and without it the firmware hangs
   forever after the splash. Locks are reentrant for their owner, because work run
   inline runs inside whatever lock its starter held.
+- **Persistent Settings, kept by the browser.** Off SeedSigner OS the firmware
+  counts the microSD as always inserted and keeps `settings.json` in its working
+  directory, which here is memory. The worker wraps `Settings.save` to hand each
+  file the firmware writes, while Persistent Settings is on, to the page, which
+  keeps it in `localStorage`; turning the setting off, which deletes the file,
+  deletes the page's copy too. At boot the kept file is where `settings.json`
+  starts from, with the panel the page is showing, and any network the URL names,
+  written over it. Only the firmware's own file is kept, and it holds no seed.
+- **Fonts for the other languages, on first use.** The translations are compiled
+  into the zip, but the fonts for Chinese, Japanese, Korean, Arabic and Thai come
+  to some 22MB, so the build serves them beside it in `fonts-<hash>/` and names
+  each, with its sha256, in the zip's `deferred-fonts.json`. The worker wraps
+  `Fonts.get_font`, which every font goes through: the first time one of those
+  is asked for, it is fetched with a synchronous request, checked against that
+  hash, and written where the firmware was about to look.
 - **Testnet, not mainnet.** Settings comes up on whatever `settings.json` holds,
   so the boot shim writes `network: T` there next to the display config, before
   the firmware reads it. Configuration rather than a patch: it is the file a
@@ -338,6 +367,10 @@ Raspberry Pi. These are small, but each one is a hard failure without it:
   one command is carried out in the worker with the `qrcode` library already in
   the zip -- the same margin, module size, error correction and colours, written
   to the PNG `qr.py` reads -- and upstream stays on the path a device takes.
+  `os.popen` goes through a shell, so it answers as one does when the command is
+  not found: empty output, exit status 127, nothing raised. Newer firmware asks
+  `git` for its version name that way off a device and falls back on an empty
+  answer; raising there stopped it on the splash screen.
 - **No OpenCV, no numpy.** `decode_qr` imports numpy inside a `try` that starts
   with `import cv2`, and opencv is not loaded, so `np` is `None` either way. The
   browser decode is what makes that harmless.
@@ -357,8 +390,9 @@ the flag, `js_log` builds nothing and posts nothing.
    pycryptodome.
 4. It fetches `seedsigner-stock.zip` and unpacks it to `/firmware`, then fetches the three `browser_*.py` shims and writes them
    alongside.
-5. It runs the boot shim: settings (display config and network), green threads,
-   `pbkdf2_hmac`, the display driver, the button patches and the camera.
+5. It runs the boot shim: settings (any the page kept from Persistent Settings,
+   then the display config and network), green threads, `pbkdf2_hmac`, the
+   deferred-font loader, the display driver, the button patches and the camera.
 6. It calls `Controller.get_instance().start()` (upstream's own entry point),
    which blocks for the lifetime of the worker.
 
@@ -371,8 +405,9 @@ Worth being explicit, because "the real firmware" is a claim that deserves a
 boundary:
 
 - The files in `seedsigner-stock.zip` are not edited. The `seedsigner` package there
-  is the pinned upstream tree; `build/build-firmware-zip.sh` rebuilds it so you can
-  diff.
+  is the pinned upstream tree, plus the `.mo` files compiled from the translations
+  it pins, where upstream's own build would put them;
+  `build/build-firmware-zip.sh` rebuilds it so you can diff.
 - That is a statement about files, not about behaviour. The seams replace firmware
   functions at runtime, and `browser_threads.py` recompiles some threads' `run()`
   methods in memory. All of it runs with full access to the firmware and to any

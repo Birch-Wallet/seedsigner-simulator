@@ -1,7 +1,9 @@
 # The firmware this simulator runs, pinned.
 #
-# src/seedsigner in the built firmware zip is the tree below, verbatim. Nothing in
-# this repository patches it: the hardware seams are replaced from the outside,
+# src/seedsigner in the built firmware zip is the tree below, verbatim, with its
+# translations compiled in from the commit that tree itself pins for its
+# seedsigner-translations submodule. Nothing in this repository patches it: the
+# hardware seams are replaced from the outside,
 # by the modules in src/shims and by the stand-in packages in src/fakes. That is
 # the property the build script exists to let you check for yourself.
 #
@@ -27,5 +29,5 @@ repo   = https://github.com/SeedSigner/seedsigner.git
 commit = e0a80d4b33b8eb7fb1e9fd14a27b7cd11c7d2cd6
 tag    = 0.8.7
 
-zip_sha256          = 8063382aee3360104521c40b468b10e9cd892e74c44735d9a7ff4e9bf37dfc77
-zip_contents_sha256 = f5474a78046dd145af995dba7aabce2b4979fc8d02671486d7f3984c0bfa86fd
+zip_sha256          = 2654c7cc188f2b9186e6005e8db85da05e122762cd4d931422dc059d333fe5e7
+zip_contents_sha256 = e29d79f62c51a30a5e6477646e198f22f9718bd420ccabd9d1dbecdf02c03ba4

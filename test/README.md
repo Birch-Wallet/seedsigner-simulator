@@ -29,7 +29,7 @@ downloads the Pyodide runtime and builds the firmware zip from its pinned upstre
 commit, which takes a few minutes; later runs reuse all of it.
 
 A subset, by substring on the step name -- the names are `leak_scan`, `device`, `record`, `threads`, `toasts`,
-`build_info`, `settings`, `scan_seedqr`, `scan_compact`, `scan_jsqr`, `scan_native`,
+`build_info`, `settings`, `persistent_settings`, `languages`, `scan_seedqr`, `scan_compact`, `scan_jsqr`, `scan_native`,
 `camera_stall`, `passphrase`, `image_entropy`, `mainnet`:
 
     python3 test/run.py scan          # everything with "scan" in the name
@@ -104,7 +104,8 @@ throughout, since what the scan tests compare is that canvas.
 makes about itself. The panel is where a visitor is told what is running, so
 every value in it is compared here against something that is not the panel's own
 source: the tag, the commit and both hashes against `UPSTREAM`, and the Pyodide
-version against `build/fetch-assets.sh`. The sha256 the panel shows for the zip
+version against `build/fetch-assets.sh`. The translations row is compared against
+the commit, languages and font hashes the build recorded. The sha256 the panel shows for the zip
 the page received is the worker's hash of the bytes it fetched, so it is compared
 against the zip on disk. When the two match, the panel says nothing more: the
 hashes sit side by side for anyone to compare.
@@ -165,6 +166,20 @@ the starting network down: a fresh page comes up on **Testnet**, which is
 warning grow its mainnet half. The **i** panel is opened too, and must name no
 outside origin the page talks to, because there is none.
 
+**`test_persistent_settings.py`**: the firmware's Persistent Settings, kept by
+this browser the way a device keeps them on its microSD card. Turned on through
+the firmware's own menus, a change survives a reload and the page's storage
+holds the firmware's own settings file; the panel the URL asks for and a network
+the URL names still win over what was saved; turned off, the saved copy is erased
+and the next reload is back on the defaults.
+
+**`test_languages.py`**: every translation, through Settings > Language. The
+menu offers them, which it only does when their `.mo` files are in the zip;
+choosing Español and then 简体中文 each change the home screen the firmware
+draws; the Chinese font is fetched from `fonts-<hash>/` and verified against the
+hash the zip names; each font is fetched once however often it is drawn; nothing
+raises.
+
 **`test_scan.py`**: the whole scan path against Chromium's fake camera, run
 three times. `qr.y4m` is the digit-based SeedQR; `qr-compact.y4m` is the
 raw-bytes CompactSeedQR, which is the case that breaks first if any layer decides
@@ -202,7 +217,12 @@ really does ignore it.
 **`test_image_entropy.py`**: new seed from a photo, the camera's other mode. The
 single-frame path was once never shimmed and fell through to the real
 `picamera` import; this drives the flow far enough to take a still and show it
-back, and requires that nothing raised on the way.
+back, and requires that nothing raised on the way. On the way it checks that the
+preview fills the 320x240 screen: the left and right thirds of it must agree,
+which they did not when the page published a smaller square than the firmware
+asked for and the firmware drew a strip of it down the left. Newer firmware
+ignores Select until it has a full pool of distinct preview frames, so Select is
+pressed again until the picture is taken.
 
 **`run.py`'s `same_seed` step**: after the scan tests, the screen each of the
 four scan runs ended on is compared with the others, and then with a committed

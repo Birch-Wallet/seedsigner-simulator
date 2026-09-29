@@ -53,7 +53,7 @@ verified than committed.
 
 ```sh
 ./build/fetch-assets.sh          # Pyodide 0.26.4 -> src/web/pyodide-e24b45d3/, zxing-wasm 3.1.4 -> src/web/zxing-2416232a/, sha256-checked
-./build/build-firmware-zip.sh      # -> build/out/seedsigner-stock.zip, from the pinned commit
+./build/build-firmware-zip.sh      # -> build/out/seedsigner-stock.zip and build/out/fonts-<hash>/, from the pinned commit
 ```
 
 Both scripts need `bash`, `git`, `curl`, `sha256sum` (or `shasum`) and a `python3`
@@ -127,6 +127,7 @@ mkdir -p "$dest"
 cp -R src/web/. "$dest/"          # the page, its scripts, icons, pyodide-e24b45d3/ and zxing-2416232a/
 cp src/shims/*.py "$dest/"
 cp build/out/seedsigner-stock.zip build/out/seedsigner-stock.build-info.json "$dest/"
+cp -R build/out/fonts-* "$dest/"    # the other languages' fonts, fetched on first use
 ```
 
 | In the served root | From | Notes |
@@ -141,6 +142,7 @@ cp build/out/seedsigner-stock.zip build/out/seedsigner-stock.build-info.json "$d
 | `zxing-2416232a/` | `fetch-assets.sh` | ~1 MB: the QR decoder, in every browser. Without it the page still scans, with jsQR, but slower to lock on, and in a browser with no `BarcodeDetector` (Safari, every browser on an iPhone, Chrome on Windows and Linux) it can take many seconds. Same-origin for the same reasons as jsQR, and, like Pyodide, it wants `.wasm` served as `application/wasm` |
 | `browser_display.py`, `browser_camera.py`, `browser_threads.py` | `src/shims/` | fetched at boot and written into Pyodide's filesystem |
 | `seedsigner-stock.zip` | `build/out/` | the pinned `seedsigner` tree plus its pure-Python dependencies plus this repository's stand-in packages |
+| `fonts-<hash>/` | `build/out/` | the fonts Chinese, Japanese, Korean, Arabic and Thai need (~22 MB), fetched by the worker the first time the firmware draws one and checked against the sha256 the zip's `deferred-fonts.json` gives it. The name is a hash of what is in it, so cache it forever like Pyodide. Leave it out and those five languages fail to draw; every other language still works |
 | `seedsigner-stock.build-info.json` | `build/out/` | what the build is: pin, tag, published hashes, dependency versions. The page's **i** panel is filled from it, and says it cannot describe the build if it is missing |
 
 The shims sit next to the page rather than inside the firmware zip deliberately: it
@@ -174,9 +176,9 @@ server {
         add_header Cross-Origin-Resource-Policy same-origin  always;
     }
 
-    # Pyodide and zxing-wasm sit in directories named by a hash of what is in
-    # them, so a new version is a new URL: cache them for good.
-    location ~ ^/(pyodide|zxing)-[0-9a-f]{8}/ {
+    # Pyodide, zxing-wasm and the fonts sit in directories named by a hash of
+    # what is in them, so a new version is a new URL: cache them for good.
+    location ~ ^/(pyodide|zxing|fonts)-[0-9a-f]{8}/ {
         add_header Cache-Control "public, max-age=31536000, immutable" always;
         add_header Cross-Origin-Opener-Policy   same-origin  always;
         add_header Cross-Origin-Embedder-Policy require-corp always;
@@ -288,6 +290,10 @@ build host in the output), so the hashes match or something differs. If they
 differ, the script also writes `seedsigner-stock.zip.manifest`, a `(sha256, path)` line per
 file in the zip: diffing two manifests says *which* files differ, and rules out the
 boring answer of two zlib versions compressing the same bytes differently.
+
+The fonts in `fonts-<hash>/` need no comparison of their own: the zip's
+`deferred-fonts.json` names each with its sha256, and the worker refuses a font
+that does not match, so a matching zip vouches for them.
 
 If you host this for other people, keeping `UPSTREAM` and the served `seedsigner-stock.zip`
 in step is most of your obligation to them: that, and not quietly editing the

@@ -25,6 +25,7 @@ rather than seconds.
 """
 
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -115,6 +116,21 @@ def describes(page, firmware):
           text(page, "#build-contents"))
     check(f"[{firmware}] and the Pyodide the repo pins",
           text(page, "#build-pyodide") == pinned_pyodide(), text(page, "#build-pyodide"))
+
+    # The translations are pinned by upstream's own tree, so the build writes the
+    # commit it found there and the fonts it served; the panel shows that commit.
+    info_path = harness.find_asset(f"seedsigner-{firmware}.build-info.json")
+    with open(info_path, encoding="utf-8") as handle:
+        info = json.load(handle)
+    translations = info.get("translations") or {}
+    check(f"[{firmware}] and the translations commit the build recorded",
+          translations.get("commit") and text(page, "#build-translations") == translations["commit"],
+          f"panel {text(page, '#build-translations')!r}, build-info {translations.get('commit')!r}")
+    fonts = (translations.get("fonts") or {}).get("fonts") or {}
+    check(f"[{firmware}] with the languages and the deferred fonts it compiled and served",
+          len(translations.get("languages", [])) > 1 and fonts
+          and all(len(digest) == 64 for digest in fonts.values()),
+          f"{len(translations.get('languages', []))} languages, fonts {sorted(fonts)}")
 
 
 def verdict(page, timeout=HASH_TIMEOUT):
