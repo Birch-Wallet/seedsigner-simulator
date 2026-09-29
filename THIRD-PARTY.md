@@ -22,9 +22,9 @@ checkable in a different way:
 | --- | --- | --- |
 | Committed to this repository | `src/web/jsQR.js` and `src/web/mp4-muxer.js`, and nothing else (plus the licence texts in `src/web/licenses/`) | `sha256sum -c build/checksums.txt` |
 | Fetched at deploy time | The Pyodide runtime and the compiled wheels it loads, and zxing-wasm | `./build/fetch-assets.sh --check` |
-| Built into `seedsigner-stock.zip` | SeedSigner, its translations and its pure-Python dependencies; also the translations' fonts, built beside the zip into `fonts-<hash>/` | `./build/build-firmware-zip.sh`, then compare the sha256. The fonts are checked against the sha256 the zip's `deferred-fonts.json` names, by the worker as it fetches each one |
+| Built into `seedsigner-stock.zip` (and `seedsigner-dev.zip`) | SeedSigner, its translations and its pure-Python dependencies; also the translations' fonts, built beside the zip into `fonts-<hash>/` | `./build/build-firmware-zip.sh` (or `... dev`), then compare the sha256. The fonts are checked against the sha256 the zip's `deferred-fonts.json` names, by the worker as it fetches each one |
 
-The third route is the one that matters most, because `seedsigner-stock.zip` is the
+The third route is the one that matters most, because the firmware zip is the
 code that touches your seed. It is not committed. Build it yourself and compare
 the hash to the one being served; if they match, the served file is what this
 document says it is.
@@ -151,9 +151,11 @@ build does not include zint, which only the writer build uses.
 
 ---
 
-## 3. Built into `seedsigner-stock.zip` by `build/build-firmware-zip.sh`
+## 3. Built into `seedsigner-stock.zip` and `seedsigner-dev.zip` by `build/build-firmware-zip.sh`
 
-Everything in this section is redistributed inside the firmware zip. It is
+Everything in this section is redistributed inside the firmware zips: the
+release, and the optional development-branch pin, each built from its own
+section of `UPSTREAM` with its own dependency table. It is
 Python, plus fonts, images and a few native binaries that come with it (below).
 Each package's licence text travels with it, in `licenses/` at the top level of
 the zip, alongside a `licenses/MANIFEST.txt` that repeats the table below. The
@@ -165,7 +167,9 @@ it fetches.
 **SeedSigner, MIT**
 
 * Repository: https://github.com/SeedSigner/seedsigner
-* Commit: `e0a80d4b33b8eb7fb1e9fd14a27b7cd11c7d2cd6` (tag `0.8.7`)
+* Commit: `e0a80d4b33b8eb7fb1e9fd14a27b7cd11c7d2cd6` (tag `0.8.7`) in `seedsigner-stock.zip`;
+  `cfaf443a5f19e3a3e2b2c7be7572ae3924142c0e` (branch `dev`) in `seedsigner-dev.zip`,
+  until `build/bump-dev.sh` moves it
 * In the zip as: `seedsigner/`, `main.py`, `LICENSE.md`
 
 Verbatim, byte for byte, from `src/seedsigner` and `src/main.py` at that commit.
@@ -199,8 +203,8 @@ would change its published hash.
 * Repository: https://github.com/SeedSigner/seedsigner-translations
 * Commit: `708961a4163b1bd43eb15c4a26713649c63f6ccd`, the commit SeedSigner's own
   tree pins for its `src/seedsigner/resources/seedsigner-translations` submodule
-  at the firmware commit above. The build reads it from there; nothing in this
-  repository pins it separately.
+  at the firmware commit above (both pins name the same one today). The build
+  reads it from there; nothing in this repository pins it separately.
 * In the zip as: `seedsigner/resources/seedsigner-translations/l10n/<lang>/LC_MESSAGES/messages.mo`,
   with the repository's `LICENSE` beside them and in `licenses/seedsigner-translations.LICENSE`
 
@@ -229,13 +233,13 @@ diff -rq upstream/src/seedsigner extracted/seedsigner
 
 ### The dependencies
 
-Versions follow upstream's `requirements.txt` at the pinned commit.
+Versions follow upstream's `requirements.txt` at each pinned commit.
 
-| Module in the zip | Distribution | Version | Licence |
-| --- | --- | --- | --- |
-| `embit` | embit | 0.8.0 | MIT |
-| `qrcode` | qrcode | 7.3.1 | BSD-3-Clause |
-| `urtypes` | urtypes | 1.0.1 | MIT |
+| Module in the zip | Distribution | stock (0.8.7) | dev | Licence |
+| --- | --- | --- | --- | --- |
+| `embit` | embit | 0.8.0 | 0.8.0 | MIT |
+| `qrcode` | qrcode | 7.3.1 | 8.0 | BSD-3-Clause |
+| `urtypes` | urtypes | 1.0.1 (PyPI) | commit `7fb280eab3b3563dfc57d2733b0bf5cbc0a96a6a` of https://github.com/selfcustody/urtypes | MIT |
 
 `qrcode`'s licence file is BSD-3-Clause for the package and additionally carries
 the MIT notice of `pyqrnative`, which parts of it were forked from.

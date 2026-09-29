@@ -31,8 +31,11 @@ BASE_URL = os.environ.get("SIM_URL", f"http://127.0.0.1:{PORT}").rstrip("/")
 # an input to anything else, so it can be deleted at any time.
 ARTIFACT_DIR = os.environ.get("SIM_ARTIFACT_DIR", os.path.join(REPO, "test", "artifacts"))
 
-# The firmware the page runs, built by build/build-firmware-zip.sh.
-FIRMWARE_ZIP = "seedsigner-stock.zip"
+# The firmware the page runs, built by build/build-firmware-zip.sh: stock, the
+# release, unless SIM_FIRMWARE=dev asks for the development-branch pin. Every
+# test runs against whichever it is, through sim_url() below.
+FIRMWARE = "dev" if os.environ.get("SIM_FIRMWARE") == "dev" else "stock"
+FIRMWARE_ZIP = f"seedsigner-{FIRMWARE}.zip"
 
 # The build outputs, none of which is committed. build/build-firmware-zip.sh
 # assembles the firmware zip from its pinned upstream SeedSigner commit
@@ -73,6 +76,8 @@ def sim_url(page="index.html", **params):
     """A URL for the simulator, with tracing on: ?debug=1 is what puts the
     firmware's narration on the console, which is what these tests read."""
     params.setdefault("debug", "1")
+    if FIRMWARE != "stock":
+        params.setdefault("firmware", FIRMWARE)
     return f"{BASE_URL}/{page}?{urlencode(params)}"
 
 

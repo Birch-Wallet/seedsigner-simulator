@@ -5,11 +5,15 @@ device, running in a browser tab. The screen is a canvas, the buttons are your
 keyboard, the camera is your webcam.
 
 It runs stock SeedSigner **0.8.7**, exactly as the SeedSigner project publishes
-it, and nothing else.
+it, and nothing else. Or, if you choose it, one pinned commit of SeedSigner's
+**development branch**: what the project has merged since that release.
 
 Forked from [bitsagarob/seedsigner-simulator](https://github.com/bitsagarob/seedsigner-simulator),
 cut down to stock SeedSigner alone, and extended:
 
+- **Two firmwares.** The 0.8.7 release by default, or the development branch
+  pinned at one commit (`dev-cfaf443`), chosen from the device panel or with
+  `?firmware=dev`. Each is its own reproducible zip with published hashes.
 - **Two devices.** The SeedSigner Plus at 320×240, or the original Waveshare
   1.3" hat at 240×240, switchable from the page.
 - **Animation.** The firmware's own animation threads run: the spinner, pulsing
@@ -79,7 +83,8 @@ involving money belongs on hardware.
 git clone https://github.com/newtonick/seedsigner-simulator.git
 cd seedsigner-simulator
 ./build/fetch-assets.sh          # Pyodide and zxing-wasm, pinned and hash-checked (~27 MB, once)
-./build/build-firmware-zip.sh      # seedsigner-stock.zip, from the pinned commit
+./build/build-firmware-zip.sh      # seedsigner-stock.zip, from the pinned release
+./build/build-firmware-zip.sh dev  # seedsigner-dev.zip, from the pinned dev commit (optional)
 python3 test/serve.py --port 8770 src/web src/shims build/out
 ```
 
@@ -90,6 +95,19 @@ pinned commit, and both steps verify what they download.
 
 Arrow keys move, Enter selects, `1` `2` `3` are the side buttons, and the drawn
 buttons work too. The screen is not one of them: a SeedSigner has no touchscreen.
+
+The development branch is pinned too, at one commit in the `[dev]` section of
+[`UPSTREAM`](UPSTREAM), so its zip can be rebuilt and checked like the
+release's. To move it to the branch's current tip:
+
+```sh
+./build/bump-dev.sh
+```
+
+That checks dev's dependencies against the build's table first (and stops if
+they have changed), then moves the pin, builds it twice, and publishes the new
+hashes in `UPSTREAM`. Run the tests against it (`SIM_FIRMWARE=dev python3
+test/run.py`) and commit.
 
 To run your own fork of SeedSigner, override the pin for one build:
 
@@ -105,7 +123,7 @@ needs editing too.
 
 ## What you can verify
 
-- **It is the firmware, not a re-creation.** `seedsigner-stock.zip` holds SeedSigner's
+- **It is the firmware, not a re-creation.** `seedsigner-stock.zip` (and `seedsigner-dev.zip`) holds SeedSigner's
   upstream Python tree and its own `Controller.start()` runs it. Menus, seed
   handling, PSBT parsing, QR encoders, translations: all theirs, the translations
   at the commit upstream's own tree pins for them.
@@ -114,9 +132,12 @@ needs editing too.
   [`src/fakes/`](src/fakes). That code runs with full access to the firmware and
   to any seed you enter. Testnet-at-boot is a value in the `settings.json` the
   device reads, not a code change.
-- **Pinned to a release tag, not a branch tip** ([`UPSTREAM`](UPSTREAM)).
-- **Rebuild and compare.** `build/build-firmware-zip.sh` reproduces the zip byte for
-  byte, and CI re-derives the hashes on every push on a clean runner.
+- **Pinned to a release tag, not a branch tip** ([`UPSTREAM`](UPSTREAM)). The
+  development branch is the exception you choose: pinned to one commit, not
+  followed, and moved only on purpose.
+- **Rebuild and compare.** `build/build-firmware-zip.sh` (and `... dev`) reproduces
+  each zip byte for byte, and CI re-derives both sets of hashes on every push on a
+  clean runner.
 - **Upstream's own tests run against our pins**
   ([`upstream-tests.yml`](.github/workflows/upstream-tests.yml)).
 - **The webcam really is the camera.** Same `DecodeQR`, same SeedQR /
@@ -195,12 +216,13 @@ every screen, thread and keypress to the console.
 
 Two rules keep the "it is the real firmware" claim true:
 
-- **Do not edit the firmware's files.** `seedsigner-stock.zip` is the upstream tree
-  at the pinned commit. If SeedSigner reaches for something a browser does not
+- **Do not edit the firmware's files.** `seedsigner-stock.zip` and
+  `seedsigner-dev.zip` are the upstream tree at their pinned commits. If SeedSigner reaches for something a browser does not
   have, replace it at runtime, in a shim under `src/shims/` or the worker, with a
   comment saying what it stands in for. That is still code with full access to the
   firmware, so keep it small and easy to read: it is what a reviewer has to read.
-  To move to a newer SeedSigner, change `UPSTREAM` and rebuild.
+  To move the release to a newer SeedSigner, change `[stock]` in `UPSTREAM` and
+  rebuild; to move the development branch, run `./build/bump-dev.sh`.
 - **Keep the manifest in step.** `build/checksums.txt` hashes every file that is
   served or packaged as it stands. Change one and run `./build/update-checksums.sh`,
   then commit the manifest with it. `git config core.hooksPath build/hooks`

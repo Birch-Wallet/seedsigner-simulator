@@ -364,6 +364,7 @@
     text-transform: uppercase; color: #7c848f;
   }
   .pop p { margin: 0; font-size: .88em; color: #c3cad3; }
+  .pick + .pop-title { margin-top: .5rem; }
   .pick, .pop-actions button, .seg button {
     font: inherit; font-size: .9em; color: #c3cad3; cursor: pointer;
     background: #1d2026; border: 1px solid #2a2e35; border-radius: 8px;
@@ -376,6 +377,8 @@
   }
   .pick small { color: #7c848f; font-variant-numeric: tabular-nums; }
   .pick[aria-current=true] { color: #f7931a; border-color: #f7931a; background: #16181c; }
+  /* Chosen, waiting on Switch: not running yet, so not current. */
+  .pick[data-wanted=true] { border-color: #f7931a; border-style: dashed; }
   .pop-actions { display: flex; justify-content: flex-end; gap: .5rem; }
   #device-switch { color: #f7931a; border-color: #f7931a; }
   .pop-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
@@ -475,18 +478,18 @@
 
         <div id="build">
           <h3>What is running</h3>
-          <p id="firmware-line">Running stock SeedSigner 0.8.7, the firmware a
-          plain SeedSigner runs.</p>
+          <p id="firmware-line">Running stock SeedSigner, the firmware a plain
+          SeedSigner runs.</p>
           <dl>
             <dt>Firmware</dt><dd id="build-firmware">…</dd>
             <dt>Upstream</dt><dd><a id="build-repo" rel="noopener"></a></dd>
-            <dt>Tag</dt><dd><a id="build-tag" rel="noopener"></a></dd>
+            <dt id="build-tag-label">Tag</dt><dd><a id="build-tag" rel="noopener"></a></dd>
             <dt>Commit</dt><dd><a id="build-commit" class="hash" rel="noopener"></a></dd>
             <dt>Interpreter</dt><dd>Pyodide <span id="build-pyodide"></span>, CPython compiled to WebAssembly</dd>
             <dt>Translations</dt><dd><a id="build-translations" class="hash" rel="noopener"></a>
               <span id="build-languages"></span></dd>
           </dl>
-          <p>The firmware is pinned to a published SeedSigner release, by tag and
+          <p id="pin-line">The firmware is pinned to a published SeedSigner release, by tag and
           by commit, rather than to a branch. A branch moves and can be rewritten
           out from under a rebuild; a published tag cannot.</p>
 
@@ -499,10 +502,12 @@
           <p class="verdict" id="build-verdict" data-state="pending"></p>
         </div>
 
-        <p><strong>Two devices.</strong> The device button under the simulator
-        picks the hardware: the SeedSigner Plus with its 320&times;240 screen, or
-        the original build on a Waveshare 1.3" hat at 240&times;240. Switching
-        starts the firmware again.</p>
+        <p><strong>Two firmwares, two devices.</strong> The device button under
+        the simulator picks the firmware: the SeedSigner release, or one pinned
+        commit of its development branch, which is not a release and is labelled
+        with that commit. It also picks the hardware: the SeedSigner Plus with its
+        320&times;240 screen, or the original build on a Waveshare 1.3" hat at
+        240&times;240. Switching either starts the firmware again.</p>
 
         <p><strong>Recording it.</strong> The record button saves an MP4 of the
         session: the firmware's screen alone at twice its own size, or the whole device
@@ -535,14 +540,19 @@
   <nav id="controls" aria-label="Simulator controls">
     <div class="ctl-wrap">
       <button type="button" class="ctl" id="ctl-device" aria-expanded="false"
-              aria-controls="device-panel" aria-label="Choose the device"
-              title="Choose the device">
+              aria-controls="device-panel" aria-label="Choose the firmware and device"
+              title="Choose the firmware and device">
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <rect x="1.5" y="6.5" width="21" height="11" rx="5.5"></rect>
           <rect x="9" y="9" width="6" height="6" rx="1"></rect>
         </svg>
       </button>
       <div class="pop" id="device-panel" role="dialog" aria-label="Device" hidden>
+        <p class="pop-title">Firmware</p>
+        <button type="button" class="pick" data-firmware="stock">
+          SeedSigner release <small id="firmware-label-stock">stock</small></button>
+        <button type="button" class="pick" data-firmware="dev" hidden>
+          Development branch <small id="firmware-label-dev">dev</small></button>
         <p class="pop-title">Device</p>
         <button type="button" class="pick" data-display="320x240">
           SeedSigner Plus <small>320×240</small></button>
@@ -636,6 +646,12 @@ function writeSavedSettings(text) {
     else localStorage.removeItem(SETTINGS_KEY);
   } catch (e) { /* no storage here: the settings last as long as the page */ }
 }
+// Which firmware: stock is a SeedSigner release and the default, so a plain link
+// means what it always meant; ?firmware=dev is one commit of SeedSigner's
+// development branch. Each is its own zip, pinned in its own section of UPSTREAM.
+const FIRMWARE = new URLSearchParams(location.search).get("firmware") === "dev" ? "dev" : "stock";
+const FIRMWARES = ["stock", "dev"];
+
 // Which hardware: the SeedSigner Plus's 320x240, or the original Waveshare hat's
 // 240x240. The firmware lays every screen out for its panel at boot, so this is
 // read once and changing it means starting the firmware again.
@@ -712,8 +728,8 @@ aboutPanel.addEventListener("toggle", () => {
   aboutPanel.style.setProperty("--about-top", Math.round(icon.bottom + 20) + "px");
 });
 
-// The build half of the i panel, read from seedsigner-stock.build-info.json, which
-// build/build-firmware-zip.sh writes beside the zip from the pins it built from.
+// The build half of the i panel, read from seedsigner-<firmware>.build-info.json,
+// which build/build-firmware-zip.sh writes beside the zip from the pins it built from.
 // The received hash is the worker's sha256 of the zip bytes it was served.
 let publishedHash = null;
 let receivedHash = null;
@@ -746,13 +762,38 @@ function showVerdict() {
       + "Do not trust anything this page shows you.";
 }
 
+// What a firmware is called in the picker: a release by its tag, the dev pin by
+// its branch and short commit, the way the firmware's own About screen puts it.
+function firmwareLabel(info) {
+  const up = info.upstream;
+  return up.tag && !up.branch ? up.tag : (up.branch || "dev") + "-" + up.commit.slice(0, 7);
+}
+
 function fillPanel(info) {
   const web = info.upstream.repo.replace(/\.git$/, "");
-  panelText("build-firmware", info.firmware + ", SeedSigner as its own project "
-                            + "publishes it, which is what a plain device runs");
+  const release = !info.upstream.branch;
+  panelText("firmware-line", release
+    ? "Running stock SeedSigner " + firmwareLabel(info) + ", the firmware a plain "
+      + "SeedSigner runs."
+    : "Running SeedSigner's development branch at commit "
+      + info.upstream.commit.slice(0, 7) + ": what SeedSigner has merged since its "
+      + "last release, as its developers are testing it. Not a release.");
+  panelText("build-firmware", release
+    ? info.firmware + ", SeedSigner as its own project publishes it, which is what "
+      + "a plain device runs"
+    : info.firmware + ", one commit of SeedSigner's development branch, not a release");
   panelLink("build-repo", web.replace(/^https:\/\//, ""), web);
-  panelLink("build-tag", info.upstream.tag,
-            web + "/releases/tag/" + encodeURIComponent(info.upstream.tag));
+  if (release) {
+    panelLink("build-tag", info.upstream.tag,
+              web + "/releases/tag/" + encodeURIComponent(info.upstream.tag));
+  } else {
+    panelText("build-tag-label", "Branch");
+    panelLink("build-tag", info.upstream.branch,
+              web + "/tree/" + encodeURIComponent(info.upstream.branch));
+    panelText("pin-line", "This firmware is pinned to one commit of the development "
+      + "branch, not to the branch itself, so it is rebuilt and checked like a "
+      + "release. It moves only when this site moves it on purpose.");
+  }
   panelLink("build-commit", info.upstream.commit, web + "/commit/" + info.upstream.commit);
   panelText("build-pyodide", info.pyodide);
   // Upstream's own submodule, at the commit upstream's tree pins. Absent from a
@@ -775,16 +816,29 @@ function fillPanel(info) {
 
 showVerdict();
 
-fetch("seedsigner-stock.build-info.json")
-  .then((response) => {
+function buildInfo(firmware) {
+  return fetch("seedsigner-" + firmware + ".build-info.json").then((response) => {
     if (!response.ok) throw new Error(response.status + " " + response.statusText);
     return response.json();
-  })
-  .then(fillPanel)
-  .catch((error) => {
+  });
+}
+
+// Every firmware's build-info: the running one fills the panel, and each one that
+// is served labels its pick. A deployment without the dev zip has no dev
+// build-info, and then no dev pick either.
+for (const firmware of FIRMWARES) {
+  const pick = document.querySelector('.pick[data-firmware="' + firmware + '"]');
+  buildInfo(firmware).then((info) => {
+    panelText("firmware-label-" + firmware, firmwareLabel(info));
+    pick.hidden = false;
+    if (firmware === FIRMWARE) fillPanel(info);
+  }).catch((error) => {
+    if (firmware !== FIRMWARE) return;
+    pick.hidden = false;
     panelText("build-firmware", `build-info.json is not being served, so this `
                               + `panel cannot say what was built (${error.message})`);
   });
+}
 
 // Without cross-origin isolation there is no SharedArrayBuffer to make, and the
 // check at the bottom of this script says why rather than this line throwing.
@@ -993,30 +1047,48 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closePanels(null);
 });
 
-// Which device: the firmware lays its screens out for the panel at boot, so the
-// other one means starting it again, and whatever this session had loaded goes
-// with it. Asked in the panel -- a browser's own confirm() would come up the
-// wrong way round over a page drawn sideways -- then the page reloads with
-// ?display, keeping the rest.
+// Which firmware and which device: the firmware lays its screens out for the
+// panel at boot, so either change means starting it again, and whatever this
+// session had loaded goes with it. Asked in the panel -- a browser's own
+// confirm() would come up the wrong way round over a page drawn sideways -- then
+// the page reloads with ?firmware and ?display, keeping the rest.
 const devicePanel = document.getElementById("device-panel");
 const deviceConfirm = document.getElementById("device-confirm");
 const devicePicks = devicePanel.querySelectorAll(".pick");
-let deviceWanted = null;
+const wanted = { firmware: FIRMWARE, display: DISPLAY };
 for (const pick of devicePicks) {
-  pick.setAttribute("aria-current", String(pick.dataset.display === DISPLAY));
+  const kind = pick.dataset.firmware ? "firmware" : "display";
+  pick.setAttribute("aria-current", String(pick.dataset[kind] === wanted[kind]));
   pick.addEventListener("click", () => {
     pick.blur();
-    deviceWanted = pick.dataset.display;
-    deviceConfirm.hidden = deviceWanted === DISPLAY;
+    wanted[kind] = pick.dataset[kind];
+    showWanted();
   });
+}
+
+// aria-current stays on what is running; a pick chosen but not yet switched to
+// is marked apart, so both changes can be chosen before one restart.
+function showWanted() {
+  for (const pick of devicePicks) {
+    const kind = pick.dataset.firmware ? "firmware" : "display";
+    const current = kind === "firmware" ? FIRMWARE : DISPLAY;
+    pick.dataset.wanted = String(pick.dataset[kind] === wanted[kind]
+                                 && wanted[kind] !== current);
+  }
+  deviceConfirm.hidden = wanted.firmware === FIRMWARE && wanted.display === DISPLAY;
 }
 document.getElementById("device-cancel").addEventListener("click", (event) => {
   event.currentTarget.blur();
-  deviceConfirm.hidden = true;
+  wanted.firmware = FIRMWARE;
+  wanted.display = DISPLAY;
+  showWanted();
 });
 document.getElementById("device-switch").addEventListener("click", () => {
   const url = new URL(location.href);
-  url.searchParams.set("display", deviceWanted);
+  url.searchParams.set("display", wanted.display);
+  // Absent means stock, so a link to the release stays as plain as it always was.
+  if (wanted.firmware === "stock") url.searchParams.delete("firmware");
+  else url.searchParams.set("firmware", wanted.firmware);
   location.assign(url);
 });
 
@@ -1223,7 +1295,7 @@ function startSimulator() {
 
   worker.postMessage({
     type: "init", sharedBuffer: shared, cameraBuffer, tickBuffer: tickBuffer.buffer,
-    width: W, height: H, debug: DEBUG, bitcoinNetwork: BITCOIN_NETWORK,
+    width: W, height: H, debug: DEBUG, bitcoinNetwork: BITCOIN_NETWORK, firmware: FIRMWARE,
     networkExplicit: NETWORK_EXPLICIT, savedSettings: readSavedSettings(),
   });
 }

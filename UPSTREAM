@@ -1,4 +1,5 @@
-# The firmware this simulator runs, pinned.
+# The firmwares this simulator runs, pinned: a release, and one commit of the
+# development branch.
 #
 # src/seedsigner in the built firmware zip is the tree below, verbatim, with its
 # translations compiled in from the commit that tree itself pins for its
@@ -11,11 +12,19 @@
 # build/build-firmware-zip.sh, which assembles the zip, and the two workflows that
 # re-derive its hash and run upstream's own tests against the pin.
 #
-# The pin is a release tag rather than a branch tip. A tip moves: rebase or
-# force-push and the sha stops existing on the remote, at which point every
-# rebuild described here fails at the fetch, for everyone, permanently. A tag is
-# a name upstream has published and does not move. The sha is still the pin; the
-# tag only says which release it is.
+# [stock] is pinned to a release tag rather than a branch tip. A tip moves:
+# rebase or force-push and the sha stops existing on the remote, at which point
+# every rebuild described here fails at the fetch, for everyone, permanently. A
+# tag is a name upstream has published and does not move. The sha is still the
+# pin; the tag only says which release it is.
+#
+# [dev] is the exception, on purpose: it is for trying what SeedSigner has merged
+# since that release. It is still one sha, not "whatever dev is now", so a build
+# of it is as reproducible and as checkable as the release's, and it moves only
+# when someone runs build/bump-dev.sh and commits the result. The risk is the one
+# above: were dev ever force-pushed past this commit, rebuilding it would fail
+# until the pin was moved. Upstream merges into dev by pull request, and that has
+# not happened; if it did, the fix is to bump.
 #
 # The section also publishes the two hashes of the firmware zip that
 # build/build-firmware-zip.sh produces from that pin. Rebuild it yourself and
@@ -31,3 +40,13 @@ tag    = 0.8.7
 
 zip_sha256          = 2654c7cc188f2b9186e6005e8db85da05e122762cd4d931422dc059d333fe5e7
 zip_contents_sha256 = e29d79f62c51a30a5e6477646e198f22f9718bd420ccabd9d1dbecdf02c03ba4
+
+# SeedSigner's development branch, at one commit: not a release. Moved to the
+# branch's current tip, with the hashes below rebuilt, by build/bump-dev.sh.
+[dev]
+repo   = https://github.com/SeedSigner/seedsigner.git
+commit = cfaf443a5f19e3a3e2b2c7be7572ae3924142c0e
+branch = dev
+
+zip_sha256          = b05c203a83064ee0ee36fc8e57d5ed24fb2b19e0164f81a158005422074e2e38
+zip_contents_sha256 = 90897bbbfde4f07a376ad954838cbf1ac9bf04806dc828869a1132b67c7beeac

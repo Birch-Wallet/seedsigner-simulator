@@ -75,12 +75,14 @@ pycryptodome 3.20.0               BSD-2-Clause, and       pycryptodome.txt
                                   public domain
 
 
-3. Inside the firmware zip (seedsigner-stock.zip)
--------------------------------------------------
+3. Inside the firmware zips (seedsigner-stock.zip, seedsigner-dev.zip)
+-----------------------------------------------------------------------
 
 SeedSigner (MIT), seedsigner-translations (MIT), embit (MIT), qrcode
 (BSD-3-Clause) and urtypes (MIT) carry their licence texts inside the zip, in
-licenses/, with licenses/MANIFEST.txt naming each. Two parts of the tree carry their own licence in place:
+licenses/, with licenses/MANIFEST.txt naming each and the version of each. The
+same holds for seedsigner-dev.zip, the development-branch firmware, whose
+versions differ. Two parts of the tree carry their own licence in place:
 seedsigner/helpers/ur2/LICENSE (BSD-2-Clause-Patent, Foundation Devices, Inc.)
 and urtypes/cbor/COPYING (MIT, with its own copyright holders).
 

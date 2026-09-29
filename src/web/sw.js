@@ -48,8 +48,8 @@ const SHELL = [
 ];
 
 // Genuinely immutable things only: paths that carry a hash of what is in them,
-// so changing the bytes changes the URL. seedsigner-stock.zip is not one of them:
-// it is rebuilt whenever the Python side changes, and cache-first with no
+// so changing the bytes changes the URL. The firmware zips are not among them:
+// each is rebuilt whenever the Python side changes, and cache-first with no
 // revalidation would keep a returning visitor on the old firmware forever while
 // handing them fresh JS around it.
 const IMMUTABLE = /\/(pyodide-[0-9a-f]{8}\/|zxing-[0-9a-f]{8}\/|fonts-[0-9a-f]{8}\/)/;

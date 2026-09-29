@@ -1,7 +1,8 @@
 # Architecture
 
 How real SeedSigner device firmware ends up running in a browser tab, and why the
-code looks the way it does. The firmware is stock SeedSigner 0.8.7.
+code looks the way it does. The firmware is stock SeedSigner 0.8.7 by default,
+or, if chosen, one pinned commit of SeedSigner's development branch.
 
 The short version: the firmware's own Python runs under Pyodide in a Web Worker,
 its files unmodified, and three hardware seams are replaced at runtime from outside
@@ -28,7 +29,7 @@ message) explains most of the rest.
   page thread (index.html)                 worker thread (worker.js)
   ─────────────────────────                ────────────────────────────────
   canvas  ◀── postMessage ─────────────────  Pyodide
-  keydown ──▶ ┐                              └─ /firmware  (seedsigner-stock.zip, unpacked)
+  keydown ──▶ ┐                              └─ /firmware  (seedsigner-<fw>.zip, unpacked)
   webcam  ──▶ ┴─ SharedArrayBuffer ──▶  ┐        ├─ seedsigner/…   unmodified
                   (Atomics.wait/notify)  ├──────▶│  ├─ RPi/, pyzbar/ import stand-ins
                                          │       │  └─ vendored deps
@@ -54,6 +55,15 @@ are served beside it in `fonts-<hash>/`, named with their hashes in the zip's
 [The rest of the environment](#the-rest-of-the-environment)). The zip is fetched and unpacked
 into Pyodide's in-memory filesystem at `/firmware`, which becomes the working
 directory.
+
+There are two firmwares, each its own zip built the same way from its own section
+of `UPSTREAM`: `seedsigner-stock.zip`, the release and the default, and
+`seedsigner-dev.zip`, one commit of the development branch, which
+`build/bump-dev.sh` moves on purpose. The page picks one from `?firmware=dev`
+(anything else is stock), the device panel offers whichever are served, labelled
+from their `build-info.json`, and switching is a reload, like switching device.
+The worker is told which in its one `init` message and fetches that zip; nothing
+else about the boot differs.
 
 The three `browser_*.py` shims are **not** in the zip. They are fetched separately
 and written into `/firmware` at boot, so the zip stays exactly what the build script
@@ -331,6 +341,16 @@ Raspberry Pi. These are small, but each one is a hard failure without it:
   blocks waiting for it to set up storage and without it the firmware hangs
   forever after the splash. Locks are reentrant for their owner, because work run
   inline runs inside whatever lock its starter held.
+- **Which version it is.** Newer firmware names itself on Settings > Version
+  from a `version.json` only SeedSigner OS writes, or off a device from git: the
+  `git` command first, which cannot run here, then the files in `.git`. So the
+  boot shim writes the few files a checkout of that commit would have, from the
+  build-info beside the zip: `HEAD` on the dev pin's branch (or detached at a
+  release's commit, with its tag), the ref naming the commit, and the remote. A
+  checkout dates itself by its newest `.py` file, and unpacking dated every file
+  now, so they are all given the commit's own time, which build-info records.
+  Only the version helper reads any of it; 0.8.7 hardcodes its version and never
+  looks.
 - **Persistent Settings, kept by the browser.** Off SeedSigner OS the firmware
   counts the microSD as always inserted and keeps `settings.json` in its working
   directory, which here is memory. The worker wraps `Settings.save` to hand each
@@ -388,10 +408,11 @@ the flag, `js_log` builds nothing and posts nothing.
    will ever receive, because after this it is inside Python.
 3. The worker loads Pyodide, then the two binary packages it needs: Pillow and
    pycryptodome.
-4. It fetches `seedsigner-stock.zip` and unpacks it to `/firmware`, then fetches the three `browser_*.py` shims and writes them
+4. It fetches `seedsigner-<firmware>.zip` and unpacks it to `/firmware`, then fetches the three `browser_*.py` shims and writes them
    alongside.
-5. It runs the boot shim: settings (any the page kept from Persistent Settings,
-   then the display config and network), green threads, `pbkdf2_hmac`, the
+5. It runs the boot shim: the version files (below), settings (any the page kept
+   from Persistent Settings, then the display config and network), green
+   threads, `pbkdf2_hmac`, the
    deferred-font loader, the display driver, the button patches and the camera.
 6. It calls `Controller.get_instance().start()` (upstream's own entry point),
    which blocks for the lifetime of the worker.
@@ -404,7 +425,7 @@ permission before the user chooses to scan.
 Worth being explicit, because "the real firmware" is a claim that deserves a
 boundary:
 
-- The files in `seedsigner-stock.zip` are not edited. The `seedsigner` package there
+- The files in either firmware zip are not edited. The `seedsigner` package there
   is the pinned upstream tree, plus the `.mo` files compiled from the translations
   it pins, where upstream's own build would put them;
   `build/build-firmware-zip.sh` rebuilds it so you can diff.

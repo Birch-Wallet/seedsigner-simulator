@@ -40,12 +40,19 @@ permissions:
 
 jobs:
   pytest:
+    name: pytest (${{ matrix.firmware }})
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # Each firmware's suite, against that firmware's own pins: stock, the
+        # release, and dev, the development-branch pin.
+        firmware: [stock, dev]
     # The stock suite runs in seconds on CPython; this is headroom, not cost.
     timeout-minutes: 20
 
     env:
-      FIRMWARE: stock
+      FIRMWARE: ${{ matrix.firmware }}
 
     steps:
       - uses: actions/checkout@v4
@@ -91,13 +98,13 @@ jobs:
 
           repo="$(field repo)"
           commit="$(field commit)"
-          tag="$(field tag)"
+          tag="$(field tag)$(field branch)"
           [ -n "${repo}" ]   || { echo "no 'repo =' line in UPSTREAM [${FIRMWARE}]" >&2; exit 1; }
           [ -n "${commit}" ] || { echo "no 'commit =' line in UPSTREAM [${FIRMWARE}]" >&2; exit 1; }
 
           echo "upstream  ${repo}"
           echo "commit    ${commit}"
-          echo "tag       ${tag}"
+          echo "tag/branch ${tag}"
 
           dir="${RUNNER_TEMP}/upstream"
           git init --quiet "${dir}"
@@ -116,15 +123,17 @@ jobs:
         run: |
           set -euo pipefail
 
-          # The authoritative list is the DEPENDENCIES table inside
-          # build-firmware-zip.sh: the same rows that decide what goes into the
-          # firmware zip, version and sha256 and all. Read out of the script rather
-          # than duplicated here, for the same reason the upstream sha is: a copy
-          # is a thing that can drift.
-          awk '
-              /^DEPS$/         { exit }
-              inside           { print }
-              /<<.DEPS./       { inside = 1 }
+          # The authoritative list is this firmware's dependency table inside
+          # build-firmware-zip.sh (DEPENDENCIES_STOCK or DEPENDENCIES_DEV): the
+          # same rows that decide what goes into the firmware zip, version and
+          # sha256 and all. Read out of the script rather than duplicated here,
+          # for the same reason the upstream sha is: a copy is a thing that can
+          # drift.
+          table="DEPENDENCIES_$(echo "${FIRMWARE}" | tr '[:lower:]' '[:upper:]')"
+          awk -v table="${table}" '
+              inside && /^DEPS$/   { exit }
+              inside               { print }
+              $0 ~ ("^read -r -d .. " table " <<") { inside = 1 }
           ' build/build-firmware-zip.sh > "${RUNNER_TEMP}/pins.txt"
           [ -s "${RUNNER_TEMP}/pins.txt" ] || { echo "could not read the dependency table out of build/build-firmware-zip.sh" >&2; exit 1; }
 
@@ -134,16 +143,30 @@ jobs:
           awk -F'|' '$1=="pypi" { printf "%s @ %s --hash=sha256:%s\n", $3, $5, $6 }' \
               "${RUNNER_TEMP}/pins.txt" > "${RUNNER_TEMP}/req-ours.txt"
 
+          # The git rows -- dev pins urtypes by commit -- cannot go in a
+          # hash-checked file, since pip cannot hash a checkout. They are
+          # installed apart, by commit, which git itself verifies.
+          awk -F'|' '$1=="git" { printf "%s @ git+%s@%s\n", $3, $5, $6 }' \
+              "${RUNNER_TEMP}/pins.txt" > "${RUNNER_TEMP}/req-ours-git.txt"
+
           # The two requirements.txt lines a zip cannot carry, taken from
           # upstream's own file at upstream's own versions: Pillow is a compiled
           # extension Pyodide supplies, and pyzbar binds libzbar, which has no
           # WebAssembly build (src/fakes/pyzbar stands in for it in the browser,
-          # and must not stand in for it here). pyzbar's row is a
-          # `name @ git+...` line rather than `name==`, hence the wider character
-          # class. The count is asserted so that an upstream that drops or
+          # and must not stand in for it here). Read whole entries, not lines:
+          # dev's requirements.txt is hash-locked, each entry continued over
+          # several lines of --hash, and pyzbar is a `name @ url` entry rather
+          # than `name==`. The hashes are dropped, since this file is installed
+          # on its own. The count is asserted so that an upstream that drops or
           # renames one fails here, loudly, rather than quietly testing without it.
-          grep -E '^(Pillow|pyzbar)[=<> @]' \
-               "${UPSTREAM_DIR}/requirements.txt" > "${RUNNER_TEMP}/req-compiled.txt"
+          python3 - "${UPSTREAM_DIR}/requirements.txt" > "${RUNNER_TEMP}/req-compiled.txt" <<'PY'
+          import re, sys
+          text = re.sub(r"\\\n", " ", open(sys.argv[1]).read())
+          for line in text.splitlines():
+              spec = line.split("#", 1)[0].split("--hash", 1)[0].strip()
+              if re.match(r"^(Pillow|pyzbar)\s*(==|@)", spec, re.I):
+                  print(spec)
+          PY
           count="$(wc -l < "${RUNNER_TEMP}/req-compiled.txt")"
           [ "${count}" -eq 2 ] || { echo "expected 2 compiled dependencies in upstream's requirements.txt, found ${count}" >&2; exit 1; }
 
@@ -164,6 +187,10 @@ jobs:
           python -m pip install --disable-pip-version-check -r "${UPSTREAM_DIR}/tests/requirements.txt"
           python -m pip install --disable-pip-version-check \
               --no-deps --force-reinstall --require-hashes -r "${RUNNER_TEMP}/req-ours.txt"
+          if [ -s "${RUNNER_TEMP}/req-ours-git.txt" ]; then
+            python -m pip install --disable-pip-version-check \
+                --no-deps --force-reinstall -r "${RUNNER_TEMP}/req-ours-git.txt"
+          fi
 
           # Upstream has no conftest.py at the root of tests/, so nothing puts
           # the firmware on sys.path. Without this, 21 files fail to import.
@@ -196,9 +223,11 @@ jobs:
           # So a reader of a green run can see which versions it was green
           # against, without having to reconstruct them from the pins.
           #
-          # One oddity worth expecting: urtypes lists itself as 0.0.0, because
-          # its 1.0.1 sdist carries no usable version metadata. The artifact is
-          # hash-checked and the code is 1.0.1; only the label pip prints is wrong.
+          # One oddity worth expecting: urtypes lists itself as 0.0.0 on stock,
+          # because its 1.0.1 sdist carries no usable version metadata, and as
+          # 0.1.0 on dev, which is what the pinned commit's own metadata says.
+          # The code is what was pinned either way; only the label pip prints is
+          # misleading.
           python -m pip list --format=columns
           echo
           python -m pip check || true

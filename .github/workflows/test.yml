@@ -1,4 +1,5 @@
-# Runs the browser suite on every push and pull request.
+# Runs the browser suite on every push and pull request, once per firmware:
+# stock, the release, and dev, the development-branch pin.
 #
 # The things this needs are not in the repo. The firmware zip is built from the
 # pinned upstream SeedSigner commit, and the Pyodide runtime is 26MB of someone
@@ -20,7 +21,13 @@ permissions:
 
 jobs:
   suite:
+    name: suite (${{ matrix.firmware }})
     runs-on: ubuntu-24.04
+    strategy:
+      # One firmware failing says nothing about the other; let both finish.
+      fail-fast: false
+      matrix:
+        firmware: [stock, dev]
     # Pyodide boots CPython in WebAssembly for every browser test, so this is
     # minutes rather than seconds even when everything passes.
     timeout-minutes: 45
@@ -45,12 +52,15 @@ jobs:
           key: assets-${{ hashFiles('build/*.sh', 'build/checksums.txt', 'UPSTREAM', '.github/workflows/test.yml') }}
 
       # fetch-assets.sh needs curl and python3; build-firmware-zip.sh also needs
-      # git. All three are on the runner image already.
-      - name: Build the firmware zip and fetch Pyodide and zxing-wasm
+      # git. All three are on the runner image already. Both zips, whichever
+      # firmware this job runs: the page offers both, and the firmware-choice and
+      # build-info tests switch between them.
+      - name: Build the firmware zips and fetch Pyodide and zxing-wasm
         if: steps.assets.outputs.cache-hit != 'true'
         run: |
           ./build/fetch-assets.sh
-          ./build/build-firmware-zip.sh
+          ./build/build-firmware-zip.sh stock
+          ./build/build-firmware-zip.sh dev
 
       - name: Install Playwright
         run: |
@@ -58,6 +68,8 @@ jobs:
           playwright install --with-deps chromium
 
       - name: Run the suite
+        env:
+          SIM_FIRMWARE: ${{ matrix.firmware }}
         run: python3 test/run.py
 
       # The screenshots are the readable half of a failure: they show what the
@@ -66,7 +78,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: screenshots
+          name: screenshots-${{ matrix.firmware }}
           path: test/artifacts/*.png
           if-no-files-found: ignore
           retention-days: 14

@@ -23,6 +23,9 @@ let bitcoinNetwork = "T";
 // previous visit, if Persistent Settings was on (see index.html).
 let networkExplicit = false;
 let savedSettings = "";
+// Which firmware zip: "stock", a release, or "dev", one commit of the
+// development branch. Anything else is stock.
+let firmware = "stock";
 
 const STATE = 0;
 const KEYCODE = 1;
@@ -46,6 +49,7 @@ self.onmessage = async (event) => {
     if (event.data.bitcoinNetwork) bitcoinNetwork = event.data.bitcoinNetwork;
     networkExplicit = !!event.data.networkExplicit;
     savedSettings = typeof event.data.savedSettings === "string" ? event.data.savedSettings : "";
+    firmware = event.data.firmware === "dev" ? "dev" : "stock";
     try {
       await boot(event.data.width, event.data.height);
     } catch (error) {
@@ -70,8 +74,8 @@ async function boot(width, height) {
 
   post("status", { stage: "firmware-zip", message: "unpacking firmware…" });
   // Built by build/build-firmware-zip.sh from UPSTREAM and published with its
-  // own pair of hashes.
-  const zip = await (await fetch("seedsigner-stock.zip")).arrayBuffer();
+  // own pair of hashes, one zip per firmware.
+  const zip = await (await fetch("seedsigner-" + firmware + ".zip")).arrayBuffer();
 
   // Hash what arrived, before unpacking it, and hand it to the page: the panel
   // shows it beside the sha256 UPSTREAM publishes. It has to be these bytes,
@@ -175,7 +179,8 @@ async function boot(width, height) {
   // to send one.
   pyodide.setInterruptBuffer(tickBuffer);
 
-  pyodide.runPython(shims(width, height, bitcoinNetwork, networkExplicit, savedSettings));
+  pyodide.runPython(shims(width, height, bitcoinNetwork, networkExplicit, savedSettings,
+                          await checkout()));
   post("ready", {});
 
   // Blocks for the lifetime of the worker. This is the whole reason the firmware
@@ -198,7 +203,37 @@ except BaseException:
   }
 }
 
-function shims(width, height, network, explicit, saved) {
+// Which commit the firmware is, told the way a checkout of it would tell it.
+// Newer firmware names its version, on Settings > Version, from a version.json
+// that only SeedSigner OS writes, or off a device from git: the git command
+// first, which cannot run here, then the files in .git. So the files are what
+// the worker provides, from the build-info beside the zip: HEAD on the branch
+// the dev pin is on (or detached at a release's commit, with its tag), the ref
+// that names the commit, and the remote it came from. That is upstream's own
+// local-checkout path, and it is only ever read by the version helper. A
+// release that hardcodes its version, as 0.8.7 does, never looks. Without
+// build-info there is nothing to say, and nothing is written.
+async function checkout() {
+  try {
+    const response = await fetch("seedsigner-" + firmware + ".build-info.json");
+    if (!response.ok) return null;
+    const up = (await response.json()).upstream || {};
+    if (!/^[0-9a-f]{40}$/.test(up.commit || "")) return null;
+    const files = { config: `[remote "origin"]\n\turl = ${up.repo || ""}\n` };
+    if (up.branch) {
+      files.HEAD = `ref: refs/heads/${up.branch}\n`;
+      files["refs/heads/" + up.branch] = up.commit + "\n";
+    } else {
+      files.HEAD = up.commit + "\n";
+      if (up.tag) files["refs/tags/" + up.tag] = up.commit + "\n";
+    }
+    return { files, commitTime: Number(up.commit_time) || 0 };
+  } catch (error) {
+    return null;
+  }
+}
+
+function shims(width, height, network, explicit, saved, dotGit) {
   const net = JSON.stringify(network || "T");
   return `
 import sys, json, threading
@@ -249,6 +284,24 @@ sys.path.insert(0, "/firmware")
 # SETTING__NETWORK and TESTNET.
 import os, json
 os.chdir("/firmware")
+
+# Which commit this is, for the firmware's own Version screen: the .git files a
+# checkout of it would have, where the version helper looks for them, at the
+# root the firmware's tree sits under (see checkout() in worker.js). A checkout
+# dates itself by its newest .py file anywhere under /firmware, and unpacking the
+# zip and writing the shims dated every one of them now, so they are all given
+# the commit's own time instead.
+_checkout = json.loads(${JSON.stringify(JSON.stringify(dotGit || {}))}) or {}
+for _name, _text in (_checkout.get("files") or {}).items():
+    _path = os.path.join("/.git", _name)
+    os.makedirs(os.path.dirname(_path), exist_ok=True)
+    with open(_path, "w") as _handle:
+        _handle.write(_text)
+if _checkout.get("commitTime"):
+    for _root, _dirs, _names in os.walk("/firmware"):
+        for _name in _names:
+            os.utime(os.path.join(_root, _name), (_checkout["commitTime"], _checkout["commitTime"]))
+
 _settings = {}
 _saved = ${JSON.stringify(saved || "")}
 if _saved:
@@ -755,6 +808,19 @@ def _traced_set_value(self, attr_name, value, *args, **kwargs):
 Settings.set_value = _traced_set_value
 
 _report_network()
+
+# Which version the firmware says it is, as its own About screen will, for the
+# trace. Only newer firmware has the helper; a release that hardcodes its version
+# has nothing to ask.
+try:
+    from seedsigner.helpers.version import Version as _Version
+    _version = _Version.get_instance()
+    js_log(f"firmware version: {_version._version_name} {_version._short_commit_hash} "
+           f"{_version._version_timestamp}")
+except ImportError:
+    pass
+except Exception as exc:
+    js_log(f"firmware version unknown: {type(exc).__name__}: {exc}")
 
 import time as _time
 _orig_sleep = _time.sleep

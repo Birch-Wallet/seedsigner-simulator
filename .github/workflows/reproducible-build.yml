@@ -1,5 +1,6 @@
-# Rebuilds the firmware zip on a clean runner and fails if it is not the file
-# UPSTREAM says it is.
+# Rebuilds each firmware zip on a clean runner and fails if it is not the file
+# UPSTREAM says it is: stock, the release, and dev, the development-branch pin,
+# each against its own section.
 #
 # The most interesting claim this repository makes is that a firmware zip is the
 # pinned upstream SeedSigner tree plus its pinned dependencies and nothing else,
@@ -34,13 +35,18 @@ permissions:
 
 jobs:
   rebuild:
+    name: rebuild (${{ matrix.firmware }})
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        firmware: [stock, dev]
     # Cloning upstream and its dependencies and writing the zip. Minutes, but
     # nothing here boots a browser.
     timeout-minutes: 20
 
     env:
-      FIRMWARE: stock
+      FIRMWARE: ${{ matrix.firmware }}
 
     steps:
       - uses: actions/checkout@v4
@@ -64,7 +70,7 @@ jobs:
       # Every byte that goes into the zip is fetched and hash-checked in this
       # run, which is the only thing that says anything about a fresh clone.
       - name: Rebuild the firmware zip from the pin
-        run: ./build/build-firmware-zip.sh --no-cache
+        run: ./build/build-firmware-zip.sh "${FIRMWARE}" --no-cache
 
       - name: Compare against the hashes published in UPSTREAM
         run: |
@@ -134,6 +140,7 @@ jobs:
       # word for it. GitHub signs a statement that this exact file came out of
       # this workflow, at this commit, and records it against the repository;
       # `gh attestation verify seedsigner-stock.zip --repo newtonick/seedsigner-simulator`
+      # (or seedsigner-dev.zip)
       # checks it against a file you downloaded, with nothing from us involved.
       #
       # Push only. A pull request from a fork runs without the write permissions
@@ -143,7 +150,7 @@ jobs:
         if: github.event_name == 'push'
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: build/out/seedsigner-stock.zip
+          subject-path: build/out/seedsigner-${{ matrix.firmware }}.zip
 
       # Only useful when the comparison above went red, and then it is the whole
       # of the investigation: which file differs, rather than that one does.
@@ -151,7 +158,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: firmware-zip-manifest-stock
-          path: build/out/seedsigner-stock.zip.manifest
+          name: firmware-zip-manifest-${{ matrix.firmware }}
+          path: build/out/seedsigner-${{ matrix.firmware }}.zip.manifest
           if-no-files-found: ignore
           retention-days: 14

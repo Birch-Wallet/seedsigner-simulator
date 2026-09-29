@@ -8,7 +8,9 @@ That last one is the only line with any weight in it, so most of this file is
 about it.
 
 Every value the panel shows is checked against something that is not the panel's
-own source. The tag, the commit and both hashes are read out of UPSTREAM here,
+own source, for each firmware that has been built: stock, the release, and dev,
+the development-branch pin. The tag (or, for dev, the branch), the commit and
+both hashes are read out of UPSTREAM here,
 not out of build-info.json, because build-info.json is what feeds the panel and
 comparing the two would only prove the page can echo a file back. And the
 received hash is compared against sha256 of the zip on disk.
@@ -41,15 +43,17 @@ from harness import check, report
 
 from playwright.sync_api import sync_playwright
 
-# The [stock] section of UPSTREAM, and the name the build gives the zip.
-FIRMWARE = "stock"
+# Every section of UPSTREAM the page can run, which is also the name the build
+# gives each zip. Each one built is checked; the suite's own firmware
+# (SIM_FIRMWARE) is the one the altered-zip check tampers with.
+FIRMWARES = ("stock", "dev")
 
 # The zip has to arrive and be hashed, which happens after Pyodide and its
 # binary packages have loaded. That is the whole cost of this file.
 HASH_TIMEOUT = 180_000
 
 
-def upstream_field(firmware, key):
+def upstream_field(firmware, key, required=True):
     """One published value, straight out of UPSTREAM.
 
     Section-aware for the same reason every other reader of that file is: a key
@@ -64,6 +68,8 @@ def upstream_field(firmware, key):
                 name, value = line.split("=", 1)
                 if name.strip() == key:
                     return value.strip()
+    if not required:
+        return None
     raise AssertionError(f"no {key!r} in the [{firmware}] section of UPSTREAM")
 
 
@@ -97,9 +103,18 @@ def describes(page, firmware):
 
     check(f"[{firmware}] the panel says which firmware is running",
           firmware in text(page, "#build-firmware"), text(page, "#build-firmware"))
-    check(f"[{firmware}] and the tag UPSTREAM pins",
-          text(page, "#build-tag") == upstream_field(firmware, "tag"),
-          text(page, "#build-tag"))
+    # A release is named by its tag; the dev pin by its branch, and the panel
+    # says which it is showing.
+    tag = upstream_field(firmware, "tag", required=False)
+    name, label = (tag, "Tag") if tag else (upstream_field(firmware, "branch"), "Branch")
+    check(f"[{firmware}] and the {label.lower()} UPSTREAM pins",
+          text(page, "#build-tag") == name and text(page, "#build-tag-label") == label,
+          f"{text(page, '#build-tag-label')}: {text(page, '#build-tag')}")
+    check(f"[{firmware}] and the opening line says which it is",
+          (name in text(page, "#firmware-line")) if tag
+          else ("development branch" in text(page, "#firmware-line")
+                and upstream_field(firmware, "commit")[:7] in text(page, "#firmware-line")),
+          text(page, "#firmware-line"))
     check(f"[{firmware}] and the commit UPSTREAM pins",
           text(page, "#build-commit") == upstream_field(firmware, "commit"),
           text(page, "#build-commit"))
@@ -169,7 +184,7 @@ def altered(page):
     one, so build/out is never touched: a test that corrupts a build output has
     to put it back, and one that fails halfway through does not.
     """
-    firmware = FIRMWARE
+    firmware = harness.FIRMWARE
     original = harness.find_asset(f"seedsigner-{firmware}.zip")
     if not original:
         check("a built firmware zip to alter", False, f"no seedsigner-{firmware}.zip")
@@ -184,7 +199,7 @@ def altered(page):
     server = serve(root, harness.PORT + 1)
     try:
         open_panel(page, f"http://127.0.0.1:{harness.PORT + 1}"
-                         "/index.html?debug=1")
+                         f"/index.html?debug=1&firmware={firmware}")
         state, computed = verdict(page)
         check("an altered zip is reported as altered", state == "differs", state)
         check("and the panel says so in words",
@@ -208,20 +223,23 @@ def main() -> int:
         errors = []
         page.on("pageerror", lambda e: errors.append(str(e)))
 
-        firmware = FIRMWARE
-        open_panel(page, harness.sim_url())
-        describes(page, firmware)
+        built = [f for f in FIRMWARES if harness.find_asset(f"seedsigner-{f}.build-info.json")]
+        check("the suite's own firmware is among those built",
+              harness.FIRMWARE in built, f"built: {built}")
+        for firmware in built:
+            open_panel(page, harness.sim_url(firmware=firmware))
+            describes(page, firmware)
 
-        state, computed = verdict(page)
-        check(f"[{firmware}] the zip the page received hashes to the published sha256",
-              state == "match", state)
-        check(f"[{firmware}] and the panel adds nothing to say so",
-              text(page, "#build-verdict") == "", text(page, "#build-verdict"))
-        check(f"[{firmware}] and that hash is the hash of the built zip",
-              computed == sha256_of(harness.find_asset(f"seedsigner-{firmware}.zip")),
-              computed)
-        page.screenshot(path=harness.artifact(f"build-panel-{firmware}.png"),
-                        full_page=True)
+            state, computed = verdict(page)
+            check(f"[{firmware}] the zip the page received hashes to the published sha256",
+                  state == "match", state)
+            check(f"[{firmware}] and the panel adds nothing to say so",
+                  text(page, "#build-verdict") == "", text(page, "#build-verdict"))
+            check(f"[{firmware}] and that hash is the hash of the built zip",
+                  computed == sha256_of(harness.find_asset(f"seedsigner-{firmware}.zip")),
+                  computed)
+            page.screenshot(path=harness.artifact(f"build-panel-{firmware}.png"),
+                            full_page=True)
 
         altered(page)
 

@@ -3,9 +3,14 @@
 # Build a firmware zip: the Python tree the simulator unpacks into the Pyodide
 # filesystem at runtime.
 #
-# One firmware, stock SeedSigner, pinned in the [stock] section of UPSTREAM:
+# Two firmwares, each pinned in its own section of UPSTREAM:
 #
 #   ./build/build-firmware-zip.sh              ->  build/out/seedsigner-stock.zip
+#   ./build/build-firmware-zip.sh dev          ->  build/out/seedsigner-dev.zip
+#
+# stock is a SeedSigner release, pinned by tag and commit, and the default. dev is
+# one commit on SeedSigner's development branch, moved on purpose by
+# build/bump-dev.sh.
 #
 # The point of this script is that you do not have to trust the zip that is
 # being served to you. Run it, and compare its sha256 to the one you downloaded.
@@ -54,11 +59,13 @@ KEEP_STAGING="no"
 
 usage() {
     cat <<'USAGE'
-Usage: build-firmware-zip.sh [stock] [options]
+Usage: build-firmware-zip.sh [stock|dev] [options]
 
-  stock            The only firmware, and the default: SeedSigner as its own
-                   project publishes it, pinned in the [stock] section of
-                   UPSTREAM                         ->  seedsigner-stock.zip
+  stock            The default: a SeedSigner release as its own project
+                   publishes it, pinned in the [stock] section of UPSTREAM
+                                                    ->  seedsigner-stock.zip
+  dev              One commit of SeedSigner's development branch, pinned in the
+                   [dev] section of UPSTREAM        ->  seedsigner-dev.zip
 
   --out DIR        Write the zip here (default: <repo>/build/out)
   --cache DIR      Cache downloaded PyPI artifacts here
@@ -78,7 +85,7 @@ Environment:
                       Either or both, for testing your own SeedSigner fork in
                       the simulator. The zip you get will not hash to what
                       UPSTREAM publishes, because it is not that build, and it
-                      says so in seedsigner-stock.build-info.json and in the
+                      says so in seedsigner-<firmware>.build-info.json and in the
                       page's i panel. See README.md.
 USAGE
 }
@@ -93,8 +100,8 @@ while [ "$#" -gt 0 ]; do
         --keep-staging) KEEP_STAGING="yes"; shift ;;
         -h|--help)      usage; exit 0 ;;
         -*)             echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
-        stock)          shift ;;
-        *)              echo "no such firmware: $1 (the only one is stock)" >&2; exit 2 ;;
+        stock|dev)      FIRMWARE="$1"; shift ;;
+        *)              echo "no such firmware: $1 (there are stock and dev)" >&2; exit 2 ;;
     esac
 done
 
@@ -156,8 +163,10 @@ fi
 # firmware that cannot import.
 
 
-# Stock's whole requirements.txt is five lines, and two of them do not belong in
-# a zip:
+# One table per firmware, because each pins its own: DEPENDENCIES below is the
+# one for the firmware being built.
+#
+# Each requirements.txt has two entries that do not belong in a zip:
 #
 #   Pillow
 #       A compiled extension. Pyodide ships its own and the worker asks for it
@@ -169,14 +178,33 @@ fi
 #       succeed: src/fakes/pyzbar is staged below and browser_camera.py replaces
 #       the one function that would have called it.
 #
-# The other three are pinned here, at the versions stock's requirements.txt
-# names: embit 0.8.0, qrcode 7.3.1 and urtypes 1.0.1 from PyPI.
+# The rest are pinned here, at the versions each firmware's requirements.txt
+# names.
+#
+# stock (0.8.7): embit 0.8.0, qrcode 7.3.1 and urtypes 1.0.1, all from PyPI.
 
-read -r -d '' DEPENDENCIES <<'DEPS' || true
+read -r -d '' DEPENDENCIES_STOCK <<'DEPS' || true
 pypi|embit|embit|0.8.0|https://files.pythonhosted.org/packages/83/88/b054b00ade6d2a41749e15976cdcec4b7ec4656ac1cb917ce3de395528d1/embit-0.8.0.tar.gz|8bf4b10073c67400370ce523fb16f035fe759f6fdd987c579bdcc268d75ed770|embit-0.8.0/src
 pypi|qrcode|qrcode|7.3.1|https://files.pythonhosted.org/packages/94/9f/31f33cdf3cf8f98e64c42582fb82f39ca718264df61957f28b0bbb09b134/qrcode-7.3.1.tar.gz|375a6ff240ca9bd41adc070428b5dfc1dcfbb0f2507f1ac848f6cded38956578|qrcode-7.3.1
 pypi|urtypes|urtypes|1.0.1|https://files.pythonhosted.org/packages/60/43/f4acb0faf63bb92070760a3039a8cae1a88c46947c71e77e99a03e196ea5/urtypes-1.0.1.tar.gz|4f1cd0ef34c21ae6f408520ecd9de0d2d157ee885b94ad9e6481cfbb3838558e|urtypes-1.0.1/src
 DEPS
+
+# dev: embit 0.8.0 as before; qrcode 8.0, the sdist whose sha256 dev's own
+# hash-locked requirements.txt lists; and urtypes at the commit dev pins as a
+# GitHub archive, fetched with git for the reason git_checkout gives below.
+# build/bump-dev.sh compares this table with dev's requirements.txt whenever the
+# pin moves, and stops if they no longer agree.
+
+read -r -d '' DEPENDENCIES_DEV <<'DEPS' || true
+pypi|embit|embit|0.8.0|https://files.pythonhosted.org/packages/83/88/b054b00ade6d2a41749e15976cdcec4b7ec4656ac1cb917ce3de395528d1/embit-0.8.0.tar.gz|8bf4b10073c67400370ce523fb16f035fe759f6fdd987c579bdcc268d75ed770|embit-0.8.0/src
+pypi|qrcode|qrcode|8.0|https://files.pythonhosted.org/packages/d7/db/6fc9631cac1327f609d2c8ae3680ecd987a2e97472437f2de7ead1235156/qrcode-8.0.tar.gz|025ce2b150f7fe4296d116ee9bad455a6643ab4f6e7dce541613a4758cbce347|qrcode-8.0
+git|urtypes|urtypes|7fb280eab3b3563dfc57d2733b0bf5cbc0a96a6a|https://github.com/selfcustody/urtypes.git|7fb280eab3b3563dfc57d2733b0bf5cbc0a96a6a|src
+DEPS
+
+case "${FIRMWARE}" in
+    stock) DEPENDENCIES="${DEPENDENCIES_STOCK}" ;;
+    dev)   DEPENDENCIES="${DEPENDENCIES_DEV}" ;;
+esac
 
 EXPECTED_TOP_LEVEL=(
     LICENSE.md
@@ -405,7 +433,7 @@ UPSTREAM_FILE="${REPO_ROOT}/UPSTREAM"
 
 # upstream_field KEY
 #
-# One key out of the [stock] section of UPSTREAM. Section-aware, so a key is
+# One key out of this firmware's section of UPSTREAM. Section-aware, so a key is
 # only ever read from the section it belongs to. The same awk program appears in
 # .github/workflows/reproducible-build.yml and upstream-tests.yml, which read
 # the same file for the same reason.
@@ -498,8 +526,13 @@ fi
 # environment variables still agree, and the date is derived from the pin rather
 # than being one more magic number to trust.
 
+# The commit's own date, whatever SOURCE_DATE_EPOCH is set to: build-info records
+# it, and the page dates the firmware's files by it (see worker.js).
+UPSTREAM_COMMIT_TIME="$(git -C "${UPSTREAM_SRC}" show -s --format=%ct HEAD)"
+[ -n "${UPSTREAM_COMMIT_TIME}" ] || die "could not read the commit date of ${UPSTREAM_COMMIT}"
+
 if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
-    SOURCE_DATE_EPOCH="$(git -C "${UPSTREAM_SRC}" show -s --format=%ct HEAD)"
+    SOURCE_DATE_EPOCH="${UPSTREAM_COMMIT_TIME}"
     [ -n "${SOURCE_DATE_EPOCH}" ] || die "could not read the commit date of ${UPSTREAM_COMMIT}"
 fi
 export SOURCE_DATE_EPOCH
@@ -810,8 +843,28 @@ print(f"    contents  sha256 {hashlib.sha256(manifest_text.encode('utf-8')).hexd
 PY
 
 # The deferred fonts, beside the zip, under the name deferred-fonts.json gives
-# them. Any older fonts-* directory goes: it belonged to another build.
-find "${OUT_DIR}" -mindepth 1 -maxdepth 1 -type d -name 'fonts-*' -exec rm -rf -- {} +
+# them. An older fonts-* directory goes unless the other firmware's build-info in
+# the same directory still names it: the two firmwares share one directory when
+# they pin the same translations, and each needs its own when they do not.
+python3 - "${OUT_DIR}" "${FIRMWARE}" "${FONTS_DIR_NAME}" <<'PY'
+import glob, json, os, shutil, sys
+
+out, firmware, mine = sys.argv[1], sys.argv[2], sys.argv[3]
+keep = {mine} if mine else set()
+for info_path in glob.glob(os.path.join(out, "seedsigner-*.build-info.json")):
+    if os.path.basename(info_path) == f"seedsigner-{firmware}.build-info.json":
+        continue
+    try:
+        with open(info_path, encoding="utf-8") as handle:
+            fonts = ((json.load(handle).get("translations") or {}).get("fonts") or {})
+        if fonts.get("dir"):
+            keep.add(fonts["dir"])
+    except (OSError, ValueError):
+        pass
+for path in glob.glob(os.path.join(out, "fonts-*")):
+    if os.path.isdir(path) and os.path.basename(path) not in keep:
+        shutil.rmtree(path)
+PY
 if [ -n "${FONTS_DIR_NAME}" ]; then
     mkdir -p "${OUT_DIR}/${FONTS_DIR_NAME}"
     for font in "${FONTS_SRC}"/*; do
@@ -857,11 +910,13 @@ fi
 # Nothing is added to describe a build that has not changed, so a deployment does
 # not have to be touched for a firmware nobody rebuilt.
 
+# A release is named by its tag; the dev pin by the branch its commit is on.
 UPSTREAM_TAG="$(upstream_field tag)"
+UPSTREAM_BRANCH="$(upstream_field branch)"
 PUBLISHED_ZIP_SHA256="$(upstream_field zip_sha256)"
 PUBLISHED_CONTENTS_SHA256="$(upstream_field zip_contents_sha256)"
 
-[ -n "${UPSTREAM_TAG}" ]               || die "no 'tag =' line in the [${FIRMWARE}] section of ${UPSTREAM_FILE}"
+[ -n "${UPSTREAM_TAG}${UPSTREAM_BRANCH}" ] || die "no 'tag =' or 'branch =' line in the [${FIRMWARE}] section of ${UPSTREAM_FILE}"
 [ -n "${PUBLISHED_ZIP_SHA256}" ]       || die "no 'zip_sha256 =' line in the [${FIRMWARE}] section of ${UPSTREAM_FILE}"
 [ -n "${PUBLISHED_CONTENTS_SHA256}" ]  || die "no 'zip_contents_sha256 =' line in the [${FIRMWARE}] section of ${UPSTREAM_FILE}"
 
@@ -873,6 +928,7 @@ INFO_FIRMWARE_TEXT="${FIRMWARE}"
 if [ "${OVERRIDDEN}" = "yes" ]; then
     INFO_FIRMWARE_TEXT="${FIRMWARE}, but NOT the published build: built from an SS_REPO / SS_COMMIT override rather than from the pin in UPSTREAM, so none of the hashes below will match and that is correct"
     UPSTREAM_TAG="none: an override is not a release"
+    UPSTREAM_BRANCH=""
 fi
 
 # The runtime is fetched by another script and pinned there, which makes that
@@ -888,7 +944,9 @@ step "writing ${OUT_INFO}"
 INFO_FIRMWARE="${INFO_FIRMWARE_TEXT}" \
 INFO_REPO="${UPSTREAM_REPO}" \
 INFO_COMMIT="${UPSTREAM_COMMIT}" \
+INFO_COMMIT_TIME="${UPSTREAM_COMMIT_TIME}" \
 INFO_TAG="${UPSTREAM_TAG}" \
+INFO_BRANCH="${UPSTREAM_BRANCH}" \
 INFO_ZIP="seedsigner-${FIRMWARE}.zip" \
 INFO_ZIP_SHA256="${PUBLISHED_ZIP_SHA256}" \
 INFO_CONTENTS_SHA256="${PUBLISHED_CONTENTS_SHA256}" \
@@ -921,7 +979,8 @@ info = {
     "upstream": {
         "repo": os.environ["INFO_REPO"],
         "commit": os.environ["INFO_COMMIT"],
-        "tag": os.environ["INFO_TAG"],
+        # Seconds since the epoch, as git records the commit.
+        "commit_time": int(os.environ["INFO_COMMIT_TIME"]),
     },
     "zip": {
         "name": os.environ["INFO_ZIP"],
@@ -931,6 +990,11 @@ info = {
     "pyodide": os.environ["INFO_PYODIDE"],
     "dependencies": dependencies,
 }
+# A release has a tag; the dev pin has the branch its commit is on instead.
+if os.environ["INFO_TAG"]:
+    info["upstream"]["tag"] = os.environ["INFO_TAG"]
+if os.environ["INFO_BRANCH"]:
+    info["upstream"]["branch"] = os.environ["INFO_BRANCH"]
 
 # The translations, which upstream's own tree pins, and the fonts served beside
 # the zip for them, with the hashes the zip's deferred-fonts.json holds them to.

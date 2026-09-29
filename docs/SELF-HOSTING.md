@@ -53,7 +53,8 @@ verified than committed.
 
 ```sh
 ./build/fetch-assets.sh          # Pyodide 0.26.4 -> src/web/pyodide-e24b45d3/, zxing-wasm 3.1.4 -> src/web/zxing-2416232a/, sha256-checked
-./build/build-firmware-zip.sh      # -> build/out/seedsigner-stock.zip and build/out/fonts-<hash>/, from the pinned commit
+./build/build-firmware-zip.sh      # -> build/out/seedsigner-stock.zip and build/out/fonts-<hash>/, from the pinned release
+./build/build-firmware-zip.sh dev  # -> build/out/seedsigner-dev.zip, from the pinned dev commit; optional
 ```
 
 Both scripts need `bash`, `git`, `curl`, `sha256sum` (or `shasum`) and a `python3`
@@ -127,6 +128,7 @@ mkdir -p "$dest"
 cp -R src/web/. "$dest/"          # the page, its scripts, icons, pyodide-e24b45d3/ and zxing-2416232a/
 cp src/shims/*.py "$dest/"
 cp build/out/seedsigner-stock.zip build/out/seedsigner-stock.build-info.json "$dest/"
+cp build/out/seedsigner-dev.zip build/out/seedsigner-dev.build-info.json "$dest/"   # only if you built dev
 cp -R build/out/fonts-* "$dest/"    # the other languages' fonts, fetched on first use
 ```
 
@@ -143,6 +145,7 @@ cp -R build/out/fonts-* "$dest/"    # the other languages' fonts, fetched on fir
 | `browser_display.py`, `browser_camera.py`, `browser_threads.py` | `src/shims/` | fetched at boot and written into Pyodide's filesystem |
 | `seedsigner-stock.zip` | `build/out/` | the pinned `seedsigner` tree plus its pure-Python dependencies plus this repository's stand-in packages |
 | `fonts-<hash>/` | `build/out/` | the fonts Chinese, Japanese, Korean, Arabic and Thai need (~22 MB), fetched by the worker the first time the firmware draws one and checked against the sha256 the zip's `deferred-fonts.json` gives it. The name is a hash of what is in it, so cache it forever like Pyodide. Leave it out and those five languages fail to draw; every other language still works |
+| `seedsigner-dev.zip`, `seedsigner-dev.build-info.json` | `build/out/` | the development-branch firmware, from the `[dev]` pin; optional. The device panel offers it only when its build-info is served, so a deployment without it looks exactly as before |
 | `seedsigner-stock.build-info.json` | `build/out/` | what the build is: pin, tag, published hashes, dependency versions. The page's **i** panel is filled from it, and says it cannot describe the build if it is missing |
 
 The shims sit next to the page rather than inside the firmware zip deliberately: it
@@ -269,7 +272,7 @@ SIM_URL=https://sim.example.org python3 test/run.py
 | "this page is not a secure context…" | plain `http` to an address other than localhost: use https, or localhost |
 | "this page needs cross-origin isolation…" | COOP/COEP missing, or dropped by a proxy or a nested `location` |
 | Stuck on "loading python…" | `pyodide/` is incomplete or 404ing; check the network tab |
-| Stuck on "unpacking firmware…" | `seedsigner-stock.zip` missing or truncated |
+| Stuck on "unpacking firmware…" | `seedsigner-stock.zip` (or, with `?firmware=dev`, `seedsigner-dev.zip`) missing or truncated |
 | SeedSigner draws, but scanning says "no camera API here" | not a secure context: use https or localhost |
 | Camera permission prompt never appears | the firmware only opens the camera when you enter a scan screen; that is intended |
 | Old firmware, new page, weird errors | a stale service-worker cache; bump `VERSION` in `sw.js` and reload |
@@ -285,6 +288,9 @@ sha256sum build/out/seedsigner-stock.zip
 curl -s https://sim.example.org/seedsigner-stock.zip | sha256sum   # must be the same
 ```
 
+The same goes for the development-branch firmware, against the `[dev]` section:
+`./build/build-firmware-zip.sh dev`, then compare `seedsigner-dev.zip`.
+
 The build is reproducible (fixed timestamps, fixed entry order, nothing about the
 build host in the output), so the hashes match or something differs. If they
 differ, the script also writes `seedsigner-stock.zip.manifest`, a `(sha256, path)` line per
@@ -295,7 +301,7 @@ The fonts in `fonts-<hash>/` need no comparison of their own: the zip's
 `deferred-fonts.json` names each with its sha256, and the worker refuses a font
 that does not match, so a matching zip vouches for them.
 
-If you host this for other people, keeping `UPSTREAM` and the served `seedsigner-stock.zip`
+If you host this for other people, keeping `UPSTREAM` and the served firmware zips
 in step is most of your obligation to them: that, and not quietly editing the
 `seedsigner` tree inside the zip, because the seams are outside it precisely so
 that nobody has to.

@@ -41,6 +41,7 @@ SUITE = [
     ("threads", ["test_threads.py"], True),
     ("toasts", ["test_toasts.py"], False),
     ("build_info", ["test_build_info.py"], True),
+    ("firmware_choice", ["test_firmware_choice.py"], True),
     ("settings", ["test_settings.py"], True),
     ("persistent_settings", ["test_persistent_settings.py"], True),
     ("languages", ["test_languages.py"], True),
@@ -69,7 +70,7 @@ EXTRA_ENV = {
 def ensure_assets() -> bool:
     """The firmware zip, the Pyodide runtime and zxing-wasm, built on demand."""
     wanted = [
-        (harness.FIRMWARE_ZIP, ["build/build-firmware-zip.sh"]),
+        (harness.FIRMWARE_ZIP, ["build/build-firmware-zip.sh", harness.FIRMWARE]),
         (os.path.join("pyodide-e24b45d3", "pyodide.js"),
          ["build/fetch-assets.sh"]),
         (os.path.join("zxing-2416232a", "zxing_reader.wasm"),
