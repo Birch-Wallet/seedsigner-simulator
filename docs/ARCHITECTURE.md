@@ -111,8 +111,9 @@ percentages so the two stay registered at any viewport width.
 The emulated panel is 320×240 (the `st7789_320x240` config, which the boot shim
 writes into `settings.json` before the firmware reads it), or 240×240 with
 `?display=240x240`, which writes `st7789_240x240`: SeedSigner's own default, the
-original Waveshare 1.3" hat. A square screen gets that hat's shell, the orange
-case, with the same D-pad and three keys as the Plus. The page believes the
+original Waveshare 1.3" hat. Both are drawn in the same orange case with the
+same eight round keys; a square screen's case is shorter by the difference in
+screen width. The page believes the
 worker about the size: `js_report_size` reports the renderer's real canvas
 dimensions, and the page resizes the canvas and re-renders the device art to match.
 

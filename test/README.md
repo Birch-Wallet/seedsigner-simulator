@@ -116,8 +116,11 @@ altered file's own hash. `build/out` is never touched, so there is nothing to pu
 back if this fails halfway.
 
 **`test_record.py`**: the record button hands back an MP4, framed as asked, on
-both devices. The screen alone has to come out at exactly the firmware's own
-size, 320x240 or 240x240. The whole device, on a dark and on a light background,
+both devices. The screen alone has to come out at exactly twice the firmware's
+own size, 640x480 or 480x480. The LCD has to be pixel perfect in a device
+recording too: scaled by a whole, even factor and placed on an even column and
+row, so that each of its pixels lines up with H.264's 2x2 colour blocks and no
+colour bleeds from one into the next. The whole device, on a dark and on a light background,
 has to come out centred, with the same padding across as down -- a little of it,
 between 4 and 12 percent of the shell's height, not the art's own uneven room for
 a drop shadow -- at an even size, since H.264 will not take an odd one. Sizes are

@@ -122,8 +122,10 @@ needs editing too.
 export, PSBT signing, SeedQR backup, settings, every QR screen. Both screens the
 firmware drives: the SeedSigner Plus at 320×240, or the original Waveshare hat at
 240×240 (the device button, or `?display=240x240`).
-Recording saves an MP4 of the session: the screen alone at its own size, or the
-whole device centred on a dark or light background (`?recbg=light`). It is
+Recording saves an MP4 of the session: the screen alone at twice its own
+size, or the whole device centred on a dark or light background
+(`?recbg=light`). Either way the LCD is pixel perfect, each of its pixels a
+square block of video pixels. It is
 composed from the firmware's frames in the browser, so the pointer is never in it.
 
 Every control sits in one bar under the device: device, record, recording

@@ -503,7 +503,7 @@
         starts the firmware again.</p>
 
         <p><strong>Recording it.</strong> The record button saves an MP4 of the
-        session: the firmware's screen alone at its own size, or the whole device
+        session: the firmware's screen alone at twice its own size, or the whole device
         centred on a dark or light background, chosen under the gear. The video
         is made in this browser from the firmware's frames, not by filming the
         page, so the pointer is never in it, and nothing is uploaded anywhere.</p>
@@ -575,7 +575,7 @@
           <span>Frame</span>
           <span id="rec-mode" class="seg" role="group" aria-label="What to record">
             <button type="button" data-mode="screen" aria-pressed="false"
-                    title="Record the screen alone, at its own size">Screen</button>
+                    title="Record the screen alone, pixel perfect at 2x">Screen</button>
             <button type="button" data-mode="device" aria-pressed="true"
                     title="Record the whole device">Device</button>
           </span>
@@ -805,7 +805,7 @@ function mountDevice(width, height) {
   deviceScreen = size;
   const device = SeedSignerDevice.render(deviceEl, {
     screenWidth: width, screenHeight: height, interactive: true, onKey: sendKey,
-    maxWidth: "68rem",   // ~1.1x the native 320x240 in the Plus's cutout
+    maxWidth: "68rem",   // ~1.35x the native 320x240 in the Plus's cutout
   });
   device.screen.appendChild(canvas);
   // The loading state rides on the screen, except once it has failed: the

@@ -1,14 +1,14 @@
 /*
  * Procedural SeedSigner device art, in the two builds the firmware has a panel for.
  *
- * Both are one shell, taken off the orange anodised case the original Waveshare
- * 1.3" hat (240x240) is usually built into: a stadium with a rim, the screen in
- * a pocket milled across the face, a five-key D-pad with a round select on the
- * left and three pills stacked on the right, large and spread for a thumb.
+ * Both are one shell, taken off a photograph of the orange anodised case: a
+ * stadium with a silver rim, the screen sunk in a rounded recess, and eight
+ * round aluminium keys on one pitch -- a five-key D-pad on the left and three
+ * stacked on the right.
  *
- * The SeedSigner Plus (320x240) is that shell lengthened by the extra width of
- * its screen, in its own colours: matte grey with cream keys, where the hat is
- * orange with a silver rim and aluminium keys.
+ * The SeedSigner Plus (320x240) is the case in the photograph. The original
+ * Waveshare 1.3" hat (240x240) is the same case shortened by the difference in
+ * screen width, which moves nothing else.
  *
  * Which one is drawn follows the screen: a square screen is the hat.
  *
@@ -43,6 +43,41 @@
     up: 1, down: 2, left: 3, right: 4, select: 5, key1: 6, key2: 7, key3: 8,
   };
 
+  // What a key looks like held down, shared by the live page and a snapshot.
+  // It has to read in a recording at a glance, so it is not subtle: the cap
+  // drops straight into its hole, losing the side wall it stood on, shrinks
+  // with the distance, is shaded by the lip of the hole, and a warm ring of
+  // light comes up round it.
+  var PRESSED = [
+    [".ssd-cap", "transform:translate(var(--ssd-px,0),var(--ssd-py,2px)) scale(.86)"],
+    [".ssd-press", "opacity:1"],
+    [".ssd-glow", "opacity:1"],
+    [".ssd-hover", "opacity:.08"],
+    [".ssd-shadow", "opacity:0"],
+    [".ssd-wall", "opacity:0"],
+    [".ssd-gloss", "opacity:.35"],
+  ];
+
+  // How a key moves, in milliseconds, all eased out: the cap goes down and
+  // comes back up in `cap`, the ring comes up in `glowIn` and dies away in
+  // `glowOut`, so it outlives the press a little. Published so that a recording
+  // can play the same motion frame by frame.
+  var MOTION = { cap: 60, glowIn: 30, glowOut: 400 };
+
+  function secs(ms) { return ms / 1000 + "s"; }
+
+  function pressedRules(scope) {
+    return PRESSED.map(function (r) {
+      return scope + ".ssd-ctl.ssd-down " + r[0] + "{" + r[1] + "}";
+    });
+  }
+
+  // Shared by both: the cap shrinks about its own centre.
+  var BASE_CSS = [
+    ".ssd-cap{transform-box:fill-box;transform-origin:center}",
+    ".ssd-ctl .ssd-hover,.ssd-ctl .ssd-press,.ssd-ctl .ssd-glow{opacity:0}",
+  ];
+
   var CSS = [
     // No tap highlight and no selection: a thumb on a key must not paint a blue
     // box over it or start selecting the shell.
@@ -55,11 +90,13 @@
     ".ssd-screen-slot>canvas{display:block;width:100%;height:100%}",
     ".ssd-glass{position:absolute;z-index:3;pointer-events:none}",
     ".ssd-ctl{pointer-events:none}",
-    ".ssd-ctl .ssd-hover,.ssd-ctl .ssd-press{opacity:0}",
+  ].concat(BASE_CSS, [
     // Only a live device reacts; the decorative build stays inert illustration.
     ".ssd-live .ssd-ctl{pointer-events:auto;cursor:pointer}",
-    ".ssd-live .ssd-cap{transition:transform .05s ease-out}",
+    ".ssd-live .ssd-cap{transition:transform " + secs(MOTION.cap) + " ease-out}",
     ".ssd-live .ssd-ctl .ssd-hover{transition:opacity .13s ease}",
+    ".ssd-live .ssd-ctl .ssd-glow{transition:opacity " + secs(MOTION.glowOut) + " ease-out}",
+    ".ssd-live .ssd-ctl.ssd-down .ssd-glow{transition-duration:" + secs(MOTION.glowIn) + "}",
     // Hover only where there is a pointer that can hover. A touch that lands on
     // a key would otherwise leave it lit until something else was touched.
     "@media (hover:hover){.ssd-live .ssd-ctl:hover .ssd-hover{opacity:.2}}",
@@ -67,28 +104,15 @@
     // whatever the browser feels like: Safari does not apply it at all without a
     // touch handler, and every engine drops it the moment a finger drifts. The
     // class goes on when the key is pressed and stays long enough to be seen.
-    // The cap sinks, not the whole key: it goes down into its own side wall, so
-    // the wall shortens under a press the way a real one does.
-    ".ssd-live .ssd-ctl.ssd-down .ssd-cap{transform:translateY(var(--ssd-sink,2px))}",
-    ".ssd-live .ssd-ctl.ssd-down .ssd-press{opacity:.42}",
-    ".ssd-live .ssd-ctl.ssd-down .ssd-hover{opacity:.1}",
-    ".ssd-live .ssd-ctl.ssd-down .ssd-shadow{opacity:.12}",
-    ".ssd-live .ssd-ctl.ssd-down .ssd-gloss{opacity:.2}",
-    "@media (prefers-reduced-motion:reduce){.ssd-live .ssd-ctl,",
-    ".ssd-live .ssd-ctl .ssd-hover{transition:none}}",
-  ].join("\n");
+  ], pressedRules(".ssd-live "), [
+    "@media (prefers-reduced-motion:reduce){.ssd-live .ssd-cap,",
+    ".ssd-live .ssd-ctl .ssd-hover,.ssd-live .ssd-ctl .ssd-glow{transition:none}}",
+  ]).join("\n");
 
   // The pressed look alone, for a snapshot: the same rules as above without the
   // .ssd-live gate, and without any :hover, because a picture of the device has
   // no pointer over it and must not show where one happened to be.
-  var SNAPSHOT_CSS = [
-    ".ssd-ctl .ssd-hover,.ssd-ctl .ssd-press{opacity:0}",
-    ".ssd-ctl.ssd-down .ssd-cap{transform:translateY(var(--ssd-sink,2px))}",
-    ".ssd-ctl.ssd-down .ssd-press{opacity:.42}",
-    ".ssd-ctl.ssd-down .ssd-hover{opacity:.1}",
-    ".ssd-ctl.ssd-down .ssd-shadow{opacity:.12}",
-    ".ssd-ctl.ssd-down .ssd-gloss{opacity:.2}",
-  ].join("\n");
+  var SNAPSHOT_CSS = BASE_CSS.concat(pressedRules("")).join("\n");
 
   var SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -191,40 +215,13 @@
       "a" + n(r) + " " + n(r) + " 0 0 1 " + n(r) + " " + n(-r) + "Z";
   }
 
-  // Every key on the real device is a fully radiused tic-tac, so the pill is the
-  // only control shape here; a "circle" is just a pill as wide as it is tall.
-  function pillPath(cx, cy, w, h) {
-    return roundRectPath(cx - w / 2, cy - h / 2, w, h, h / 2);
-  }
-
-  // Stroking a path with its own paint rounds off sharp corners, which is how a
-  // key gets a moulded edge instead of a die-cut one.
-  function paint(shape, fill, grow, cls) {
-    var grown = grow > 0
-      ? ' stroke="' + fill + '" stroke-width="' + n(grow * 2) + '" stroke-linejoin="round"'
-      : "";
-    return '<path' + (cls ? ' class="' + cls + '"' : "") +
-      ' d="' + shape + '" fill="' + fill + '"' + grown + "/>";
-  }
-
-  // What differs in colour between the two builds. Everything that lights them
-  // (the chamfer, the sheen, the key light) is shared and drawn in white and
-  // black over these.
-  var PALETTES = {
-    plus: {
-      body: ["#55585c", "#45484c", "#383b3f", "#2e3134"],   // matte grey
-      outline: "#23262b", band: "#42464d",
-      key: ["#f4f1ea", "#e2ded4", "#bdb9ae"],               // cream caps
-      wall: ["#4f4d47", "#6f6b64", "#948e84"],
-      pocket: "#8a8e94",                                    // the milled floor
-    },
-    hat: {
-      body: ["#f28a2e", "#e97a1d", "#da6c14", "#c15c0e"],   // anodised orange
-      outline: "#141518", band: "#aeb2b7",                  // a silver rim
-      key: ["#f3f4f5", "#cfd2d6", "#9a9ea4"],               // turned aluminium
-      wall: ["#50545a", "#71757b", "#969aa0"],
-      pocket: "#f7a655",
-    },
+  // The case's colours, shared by both builds. Everything that lights it (the
+  // chamfer, the sheen, the key light) is drawn in white and black over these.
+  var PALETTE = {
+    body: ["#f48a3c", "#e2732a", "#d0611f", "#b75116"],   // anodised orange
+    outline: "#141518", band: "#b9bdc2",                  // a silver rim
+    key: ["#f4f5f6", "#d5d8db", "#aaaeb4", "#7d828a"],    // turned aluminium
+    wall: ["#50545a", "#71757b", "#969aa0"],
   };
 
   function defs(id, L, P) {
@@ -235,7 +232,7 @@
     return [
       "<defs>",
       // Shell top face: key light upper-left, falling away to the lower right.
-      // Flatter than a glossy consumer shell: the real one is a matte grey.
+      // Flatter than a glossy consumer shell: the real one is matte anodising.
       '<linearGradient id="', id, '-body" ', space, bodyBox, ">",
       '<stop offset="0" stop-color="', P.body[0], '"/>',
       '<stop offset=".40" stop-color="', P.body[1], '"/>',
@@ -293,11 +290,59 @@
       '<stop offset=".52" stop-color="#000000" stop-opacity="0"/>',
       '<stop offset="1" stop-color="#000000" stop-opacity=".09"/>',
       "</linearGradient>",
-      // Cream key caps. Off-white and slightly warm, not paper white.
-      '<linearGradient id="', id, '-key" x1=".18" y1="0" x2=".8" y2="1">',
+      // Aluminium key caps, gently domed: lit off centre towards the light and
+      // rolling off to the edge all the way round.
+      '<radialGradient id="', id, '-key" cx=".4" cy=".34" r=".72">',
       '<stop offset="0" stop-color="', P.key[0], '"/>',
-      '<stop offset=".45" stop-color="', P.key[1], '"/>',
-      '<stop offset="1" stop-color="', P.key[2], '"/>',
+      '<stop offset=".5" stop-color="', P.key[1], '"/>',
+      '<stop offset=".86" stop-color="', P.key[2], '"/>',
+      '<stop offset="1" stop-color="', P.key[3], '"/>',
+      "</radialGradient>",
+      // Turned aluminium: fine concentric rings from the lathe.
+      '<radialGradient id="', id, '-turned" cx=".5" cy=".5" r=".5" spreadMethod="repeat"',
+      ' gradientTransform="translate(.5 .5) scale(.035) translate(-.5 -.5)">',
+      '<stop offset="0" stop-color="#ffffff" stop-opacity="0"/>',
+      '<stop offset=".5" stop-color="#ffffff" stop-opacity=".07"/>',
+      '<stop offset="1" stop-color="#000000" stop-opacity=".03"/>',
+      "</radialGradient>",
+      // The window reflected in the dome.
+      '<radialGradient id="', id, '-spec" cx=".36" cy=".28" r=".3">',
+      '<stop offset="0" stop-color="#ffffff" stop-opacity=".85"/>',
+      '<stop offset=".45" stop-color="#ffffff" stop-opacity=".25"/>',
+      '<stop offset="1" stop-color="#ffffff" stop-opacity="0"/>',
+      "</radialGradient>",
+      // A cap pushed in is shaded by the lip of its hole, heavily at the top.
+      '<radialGradient id="', id, '-pressShade" cx=".5" cy=".62" r=".62">',
+      '<stop offset="0" stop-color="#000000" stop-opacity=".24"/>',
+      '<stop offset=".7" stop-color="#000000" stop-opacity=".42"/>',
+      '<stop offset="1" stop-color="#000000" stop-opacity=".72"/>',
+      "</radialGradient>",
+      '<radialGradient id="', id, '-hole" cx=".5" cy=".5" r=".5">',
+      '<stop offset=".8" stop-color="#0c0603" stop-opacity=".9"/>',
+      '<stop offset=".93" stop-color="#1c0d05" stop-opacity=".75"/>',
+      '<stop offset="1" stop-color="#1c0d05" stop-opacity="0"/>',
+      "</radialGradient>",
+      // The case's side, seen below the top face: brushed silver, brightest
+      // where it turns under the rim.
+      '<linearGradient id="', id, '-side" ', space, ' x1="0" y1="', n(L.bodyY + L.bodyH * 0.5),
+      '" x2="0" y2="', n(L.bodyY + L.bodyH + L.depth), '">',
+      '<stop offset="0" stop-color="#e9ebed"/>',
+      '<stop offset=".82" stop-color="#c9cdd1"/>',
+      '<stop offset=".9" stop-color="#eef0f2"/>',
+      '<stop offset="1" stop-color="#8b9096"/>',
+      "</linearGradient>",
+      // The face's own edge, rounded over into the rim: catching the light
+      // along the top and turning away from it along the bottom.
+      '<linearGradient id="', id, '-faceEdge" x1="0" y1="0" x2=".25" y2="1">',
+      '<stop offset="0" stop-color="#ffffff" stop-opacity=".55"/>',
+      '<stop offset=".35" stop-color="#ffffff" stop-opacity=".08"/>',
+      '<stop offset=".65" stop-color="#000000" stop-opacity=".06"/>',
+      '<stop offset="1" stop-color="#000000" stop-opacity=".35"/>',
+      "</linearGradient>",
+      '<linearGradient id="', id, '-sideH" ', space, bodyBox, ">",
+      '<stop offset="0" stop-color="#ffffff" stop-opacity=".18"/>',
+      '<stop offset=".5" stop-color="#ffffff" stop-opacity="0"/>',
+      '<stop offset="1" stop-color="#000000" stop-opacity=".22"/>',
       "</linearGradient>",
       // The side wall of a cap. Which wall of a key is on show is decided by
       // where the key sits (see parallax below), and a wall is lit by which way
@@ -321,6 +366,11 @@
       '<stop offset=".5" stop-color="#ffffff" stop-opacity=".015"/>',
       '<stop offset="1" stop-color="#ffffff" stop-opacity="0"/>',
       "</linearGradient>",
+      '<linearGradient id="', id, '-recess" x1="0" y1="0" x2="0" y2="1">',
+      '<stop offset="0" stop-color="#000000" stop-opacity=".32"/>',
+      '<stop offset=".5" stop-color="#000000" stop-opacity=".06"/>',
+      '<stop offset="1" stop-color="#ffffff" stop-opacity=".3"/>',
+      "</linearGradient>",
       '<linearGradient id="', id, '-wellTop" x1="0" y1="0" x2="0" y2="1">',
       '<stop offset="0" stop-color="#000000" stop-opacity=".85"/>',
       '<stop offset="1" stop-color="#000000" stop-opacity="0"/>',
@@ -342,6 +392,15 @@
       '<filter id="', id, '-btnShadow" x="-70%" y="-70%" width="240%" height="260%">',
       '<feGaussianBlur stdDeviation="', n(4.5 * u), '"/>',
       "</filter>",
+      '<filter id="', id, '-glowBlur" x="-60%" y="-60%" width="220%" height="220%">',
+      '<feGaussianBlur stdDeviation="', n(6.5 * u), '"/>',
+      '<feComponentTransfer><feFuncA type="linear" slope="3.2"/></feComponentTransfer>',
+      "</filter>",
+      // Brushed: noise stretched along one axis.
+      '<filter id="', id, '-brush" x="0" y="0" width="100%" height="100%">',
+      '<feTurbulence type="fractalNoise" baseFrequency=".004 .9" numOctaves="2" stitchTiles="stitch"/>',
+      '<feColorMatrix type="saturate" values="0"/>',
+      "</filter>",
       // Matte plastic: without a little grain the gradients read as vector fills.
       '<filter id="', id, '-grain" x="0" y="0" width="100%" height="100%">',
       '<feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" stitchTiles="stitch"/>',
@@ -357,15 +416,27 @@
     var iw = w - L.edge * 2, ih = h - L.edge * 2;
     var outer = roundRectPath(x, y, w, h, L.radius);
     var inner = roundRectPath(ix, iy, iw, ih, ih / 2);
+    // The top face and the silver side under it, as a camera a little above
+    // the table sees them: the same stadium carried down by the case's depth.
+    var solid = roundRectPath(x, y, w, h + L.depth, L.radius);
     var band = ' d="' + outer + inner + '" fill-rule="evenodd"';
     var out = [];
 
-    out.push('<ellipse cx="', n(x + w / 2), '" cy="', n(y + h + 5 * u),
-      '" rx="', n(w * 0.44), '" ry="', n(11 * u),
-      '" fill="#000000" opacity=".7" filter="url(#', id, '-contact)"/>');
+    out.push('<ellipse cx="', n(x + w / 2), '" cy="', n(y + h + L.depth + 3 * u),
+      '" rx="', n(w * 0.45), '" ry="', n(10 * u),
+      '" fill="#000000" opacity=".75" filter="url(#', id, '-contact)"/>');
 
-    out.push('<path class="ssd-drop" d="', outer, '" fill="', P.outline,
+    out.push('<path class="ssd-drop" d="', solid, '" fill="', P.outline,
       '" filter="url(#', id, '-drop)"/>');
+    out.push('<path d="', solid, '" fill="url(#', id, '-side)"/>');
+    out.push('<path d="', solid, '" fill="url(#', id, '-sideH)"/>');
+    out.push('<clipPath id="', id, '-solid"><path d="', solid, '"/></clipPath>');
+    out.push('<g clip-path="url(#', id, '-solid)"><rect x="', n(x), '" y="', n(y + h * 0.5),
+      '" width="', n(w), '" height="', n(h * 0.5 + L.depth), '" filter="url(#', id,
+      '-brush)" opacity=".12" style="mix-blend-mode:overlay"/></g>');
+    // The seam where the face's edge turns down into the side.
+    out.push('<path d="', outer, '" fill="none" stroke="#000000" stroke-opacity=".22"',
+      ' stroke-width="', n(1.2 * u), '"/>');
     out.push('<path', band, ' fill="', P.band, '"/>');
     out.push('<path', band, ' fill="url(#', id, '-chamV)"/>');
     out.push('<path', band, ' fill="url(#', id, '-chamH)"/>');
@@ -386,7 +457,9 @@
     out.push('<path d="', inner, '" fill="url(#', id, '-sheen)"/>');
     out.push('<g clip-path="url(#', id, '-face)"><rect x="', n(ix), '" y="', n(iy),
       '" width="', n(iw), '" height="', n(ih), '" filter="url(#', id,
-      '-grain)" opacity=".055" style="mix-blend-mode:overlay"/></g>');
+      '-grain)" opacity=".09" style="mix-blend-mode:overlay"/></g>');
+    out.push('<g clip-path="url(#', id, '-face)"><path d="', inner, '" fill="none" stroke="url(#', id,
+      '-faceEdge)" stroke-width="', n(7 * u), '"/></g>');
     return out.join("");
   }
 
@@ -409,72 +482,87 @@
   }
 
   function control(id, L, spec, live) {
-    var u = L.u, grow = spec.grow, rim = 0.45 * u;
+    var u = L.u, r = L.keyD / 2, rim = 0.8 * u;
     var off = parallax(L, spec.cx, spec.cy);
+    var cx = spec.cx, cy = spec.cy;
+    function disc(x, y, radius, attrs) {
+      return '<circle cx="' + n(x) + '" cy="' + n(y) + '" r="' + n(radius) + '" ' + attrs + "/>";
+    }
     // The base sits on the plate; the cap floats outwards off it, and the sliver
-    // of base left showing on the inward side is the wall.
-    var base = pillPath(spec.cx, spec.cy, spec.w, spec.h);
-    var cap = pillPath(spec.cx + off.x, spec.cy + off.y, spec.w, spec.h);
+    // of base left showing on the inward side is the wall. A press puts the cap
+    // back over its base, a little down, into the hole.
+    var kx = cx + off.x, ky = cy + off.y;
     return [
       '<g class="ssd-ctl" data-ssd-channel="', spec.channel, '" data-ssd-control="', spec.name,
-      '" style="--ssd-sink:', n(2.8 * u), 'px" role="button">',
+      '" style="--ssd-px:', n(-off.x), 'px;--ssd-py:', n(-off.y + 1.6 * u), 'px" role="button">',
       live ? "<title>" + spec.label + "</title>" : "",
-      '<g class="ssd-shadow" opacity=".55" transform="translate(0 ', n(3.4 * u), ')">',
-      '<path d="', base, '" fill="#000000" stroke="#000000" stroke-width="', n(grow * 2 + 2 * u),
-      '" stroke-linejoin="round" filter="url(#', id, '-btnShadow)"/></g>',
-      paint(base, "url(#" + id + "-wall)", grow),
-      // Only the cap sinks under a press, into the wall it is standing on.
+      // The keys are drawn at the photograph's size, which on a phone is a
+      // little under a thumb; this unpainted disc takes the target out to most
+      // of the pitch, still leaving clear space between neighbours.
+      disc(cx, cy, L.hit / 2, 'fill="transparent"'),
+      // The hole in the case the key comes up through.
+      disc(cx, cy, r + 4 * u, 'fill="url(#' + id + '-hole)"'),
+      // Lit on a press. Its geometry stays inside the target disc, so the key
+      // measures the same up or down; only the blur spills past it.
+      '<g class="ssd-glow">',
+      '<g filter="url(#' + id + '-glowBlur)">',
+      disc(cx, cy, r + 2 * u, 'fill="none" stroke="#ffe9b8" stroke-width="' + n(4 * u) + '"'),
+      disc(cx, cy, r + 2 * u, 'fill="none" stroke="#ffffff" stroke-width="' + n(4 * u) + '"'),
+      "</g>",
+      disc(cx, cy, r + 2 * u, 'fill="none" stroke="#fff7e6" stroke-opacity=".95" stroke-width="' +
+        n(2 * u) + '"'),
+      "</g>",
+      '<g class="ssd-shadow" opacity=".6" transform="translate(', n(off.x * 0.6), " ", n(3.8 * u), ')">',
+      disc(cx, cy, r + 1.5 * u, 'fill="#000000" filter="url(#' + id + '-btnShadow)"'),
+      "</g>",
+      disc(cx, cy, r, 'class="ssd-wall" fill="url(#' + id + '-wall)"'),
       '<g class="ssd-cap">',
-      '<path d="', cap, '" fill="none" stroke="url(#', id,
-      '-keyRim)" stroke-width="', n(grow * 2 + rim * 2), '" stroke-linejoin="round"/>',
-      paint(cap, "url(#" + id + "-key)", grow),
-      paint(cap, "url(#" + id + "-gloss)", grow, "ssd-gloss"),
-      paint(cap, "url(#" + id + "-scene)", grow + rim),
-      paint(cap, "#f7931a", grow, "ssd-hover"),
-      paint(cap, "#000000", grow, "ssd-press"),
+      disc(kx, ky, r, 'fill="url(#' + id + '-key)"'),
+      disc(kx, ky, r, 'fill="url(#' + id + '-turned)"'),
+      disc(kx, ky, r, 'class="ssd-gloss" fill="url(#' + id + '-spec)"'),
+      disc(kx, ky, r, 'fill="url(#' + id + '-scene)"'),
+      // The chamfer round the cap's edge: bright where it faces the light.
+      disc(kx, ky, r - rim / 2, 'fill="none" stroke="url(#' + id + '-keyRim)" stroke-width="' +
+        n(rim) + '"'),
+      disc(kx, ky, r, 'class="ssd-hover" fill="#f7931a"'),
+      disc(kx, ky, r, 'class="ssd-press" fill="url(#' + id + '-pressShade)"'),
       "</g>",
       "</g>",
     ].join("");
   }
 
-  // Five discrete keys in a diamond, and they are not all the same key turned
-  // round: up and down are pills lying down, left and right are pills standing
-  // up, and select is a true circle between them. The real device has no printed
-  // glyphs on them, so neither does this; the accessible name carries the meaning.
+  // Five round keys in a plus, one pitch apart in both directions. The real
+  // device has no printed glyphs on them, so neither does this; the accessible
+  // name carries the meaning.
   function padArt(id, L, live) {
-    var u = L.u, cx = L.padCx, cy = L.cy, P = L.pad;
-    var armW = P.armW * u, armH = P.armH * u;     // up and down
-    var sideW = P.sideW * u, sideH = P.sideH * u; // left and right
-    var mid = P.mid * u;                          // select, as wide as it is tall
-    var dx = P.dx * u, dy = P.dy * u;
-    var grow = 3 * u;
+    var cx = L.padCx, cy = L.cy, p = L.pitch;
     var out = [];
 
     // No well and no faceplate: on the real device these five caps stand
     // straight out of the flat top plate.
     var keys = [
-      ["up", CHANNEL.up, "Up", cx, cy - dy, armW, armH],
-      ["down", CHANNEL.down, "Down", cx, cy + dy, armW, armH],
-      ["left", CHANNEL.left, "Left", cx - dx, cy, sideW, sideH],
-      ["right", CHANNEL.right, "Right", cx + dx, cy, sideW, sideH],
-      ["select", CHANNEL.select, "Select", cx, cy, mid, mid],
+      ["up", CHANNEL.up, "Up", cx, cy - p],
+      ["down", CHANNEL.down, "Down", cx, cy + p],
+      ["left", CHANNEL.left, "Left", cx - p, cy],
+      ["right", CHANNEL.right, "Right", cx + p, cy],
+      ["select", CHANNEL.select, "Select", cx, cy],
     ];
     for (var i = 0; i < keys.length; i++) {
       var k = keys[i];
       out.push(control(id, L, {
-        name: k[0], channel: k[1], label: k[2], grow: grow,
-        cx: k[3], cy: k[4], w: k[5], h: k[6],
+        name: k[0], channel: k[1], label: k[2], cx: k[3], cy: k[4],
       }, live));
     }
     return out.join("");
   }
 
   /*
-   * The hat's case, off a photograph of it, in units of the glass's height.
-   * The controls sit about a quarter of the way in from each end, leaving the
-   * end caps empty, and the screen sits centred between them. A wider screen
-   * lengthens the shell by exactly its extra width and moves nothing else, which
-   * is how the Plus's 4:3 panel gets the same case.
+   * The case, off a photograph of the Plus, in units of the glass's height (the
+   * photograph's verticals are corrected for its slightly raised camera). The
+   * controls sit a fifth of the way in from each end, leaving the end caps
+   * empty, and the screen sits centred between them. A narrower screen shortens
+   * the shell by exactly its missing width and moves nothing else, which is how
+   * the hat's square panel gets the same case.
    */
   function layout(screenW, screenH, scale) {
     var sw = Math.round(screenW * scale);
@@ -482,14 +570,17 @@
     var u = sh / 480;                    // one design unit; the art is pure ratio
     var L = { u: u, sw: sw, sh: sh };
 
-    L.edge = 20 * u;                     // the rim
-    L.bodyW = 1820 * u + (sw - sh);
-    L.bodyH = 730 * u;
+    L.edge = 18 * u;                     // the rim
+    L.bodyW = 1418 * u + (sw - sh);
+    L.bodyH = 641 * u;
     L.radius = L.bodyH / 2;              // a true stadium, not a rounded rect
+
+    // The case's silver side, showing under the top face.
+    L.depth = 22 * u;
 
     L.padX = 12 * u;
     L.padT = 22 * u;
-    L.padB = 58 * u;
+    L.padB = 36 * u + L.depth;
     L.bodyX = L.padX;
     L.bodyY = L.padT;
     L.viewW = L.bodyW + L.padX * 2;
@@ -497,16 +588,13 @@
     L.cx = L.bodyX + L.bodyW / 2;
     L.cy = L.bodyY + L.bodyH / 2;
 
-    // Both clusters are large and open, because a thumb on a phone needs them
-    // to be: clear gaps between the D-pad's keys, and the three on the right
-    // lying-down pills spread to the shell's height and tall enough to stay a
-    // thumb target.
-    L.padCx = L.bodyX + 370 * u;         // D-pad centre
-    L.pad = { armW: 125, armH: 80, sideW: 86, sideH: 118, mid: 120, dx: 160, dy: 165 };
-    L.keyCx = L.bodyX + L.bodyW - 380 * u;
-    L.keyW = 180 * u;                    // right-hand pills, and their spacing
-    L.keyH = 106 * u;
-    L.keyGap = 170 * u;
+    // Every key is the same round button, and every neighbour is the same
+    // distance away, across the D-pad and down the three on the right.
+    L.keyD = 84 * u;                     // a key's visible diameter
+    L.pitch = 118 * u;                   // centre to centre
+    L.hit = L.pitch - 26 * u;            // what a finger can press
+    L.padCx = L.bodyX + 304 * u;         // D-pad centre
+    L.keyCx = L.bodyX + L.bodyW - 257 * u;
     // How far a cap's top face is seen displaced from its own base at the far
     // edge of the shell. Scales with the shell, so the effect is the same
     // photograph at any rendered size.
@@ -514,42 +602,33 @@
 
     // The screen sits centred between the two clusters rather than in the
     // shell, so the gap either side of it is the same: from the D-pad's
-    // outermost right edge to the pills' left edge.
-    var padRight = L.padCx + (L.pad.dx + L.pad.sideW / 2) * u;
-    var keysLeft = L.keyCx - L.keyW / 2;
-    L.screenX = (padRight + keysLeft) / 2 - sw / 2;
-    L.screenY = L.cy - sh / 2;
-    // The pocket milled across the face for the display module: this much
-    // wider than the glass on each side, and flared at the top.
-    L.pocket = 60 * u;
+    // outermost right edge to the right-hand keys' left edge.
+    var padRight = L.padCx + L.pitch + L.keyD / 2;
+    var keysLeft = L.keyCx - L.keyD / 2;
+    // On whole units, so a recording can put every LCD pixel on whole video
+    // pixels; the half unit it may move is invisible.
+    L.screenX = Math.round((padRight + keysLeft) / 2 - sw / 2);
+    L.screenY = Math.round(L.cy - sh / 2);
     return L;
   }
 
-  function screenArt(id, L, P) {
+  function screenArt(id, L) {
     var u = L.u, x = L.screenX, y = L.screenY, w = L.sw, h = L.sh;
-    var ix = L.bodyX + L.edge, iy = L.bodyY + L.edge;
-    var ih = L.bodyH - L.edge * 2, bottom = iy + ih;
-    var pl = x - L.pocket, pr = x + w + L.pocket, flare = 60 * u, shoulder = y - 30 * u;
+    var m = 12 * u;                      // the module's black surround
     var out = [];
 
-    // The pocket: a flatter, paler floor across the face's full height, its
-    // walls catching the light on the left and falling into shade on the right.
-    var floor = "M" + n(pl - flare) + " " + n(iy) + "H" + n(pr + flare) +
-      "L" + n(pr) + " " + n(shoulder) + "V" + n(bottom) + "H" + n(pl) +
-      "V" + n(shoulder) + "Z";
-    out.push('<g clip-path="url(#', id, '-face)">');
-    out.push('<path d="', floor, '" fill="', P.pocket, '" opacity=".3"/>');
-    out.push('<path d="', floor, '" fill="url(#', id, '-scene)"/>');
-    out.push('<path d="M', n(pl - flare), ' ', n(iy), 'L', n(pl), ' ', n(shoulder), 'V', n(bottom),
-      '" fill="none" stroke="#ffffff" stroke-opacity=".32" stroke-width="', n(3 * u), '"/>');
-    out.push('<path d="M', n(pr + flare), ' ', n(iy), 'L', n(pr), ' ', n(shoulder), 'V', n(bottom),
-      '" fill="none" stroke="#000000" stroke-opacity=".28" stroke-width="', n(3 * u), '"/>');
-    out.push("</g>");
+    // The recess the module sits in: a rounded step down into the face, its
+    // upper wall in shade and its lower lip catching the light.
+    var lip = 14 * u;
+    var recess = roundRectPath(x - m - lip, y - m - lip, w + (m + lip) * 2,
+      h + (m + lip) * 2, 26 * u);
+    out.push('<path d="', recess, '" fill="#000000" opacity=".1"/>');
+    out.push('<path d="', recess, '" fill="none" stroke="url(#', id,
+      '-recess)" stroke-width="', n(5 * u), '"/>');
 
     // The module's black surround, then the glass.
-    var m = 12 * u;
     out.push('<rect x="', n(x - m), '" y="', n(y - m), '" width="', n(w + m * 2),
-      '" height="', n(h + m * 2), '" rx="', n(8 * u), '" fill="#0b0c0f"',
+      '" height="', n(h + m * 2), '" rx="', n(16 * u), '" fill="#0b0c0f"',
       ' stroke="#000000" stroke-opacity=".6" stroke-width="', n(2 * u), '"/>');
     out.push('<clipPath id="', id, '-well"><rect x="', n(x), '" y="', n(y),
       '" width="', n(w), '" height="', n(h), '" rx="', n(4 * u), '"/></clipPath>');
@@ -562,30 +641,25 @@
   }
 
   function keysArt(id, L, live) {
-    var u = L.u, cx = L.keyCx, cy = L.cy;
-    var gap = L.keyGap, grow = 3 * u;
+    var cx = L.keyCx, cy = L.cy, p = L.pitch;
     var out = [];
     var keys = [
-      ["key1", CHANNEL.key1, "Key 1", cy - gap],
+      ["key1", CHANNEL.key1, "Key 1", cy - p],
       ["key2", CHANNEL.key2, "Key 2", cy],
-      ["key3", CHANNEL.key3, "Key 3", cy + gap],
+      ["key3", CHANNEL.key3, "Key 3", cy + p],
     ];
     for (var i = 0; i < keys.length; i++) {
       var k = keys[i];
       out.push(control(id, L, {
-        name: k[0], channel: k[1], label: k[2], grow: grow,
-        cx: cx, cy: k[3], w: L.keyW, h: L.keyH,
+        name: k[0], channel: k[1], label: k[2], cx: cx, cy: k[3],
       }, live));
     }
     return out.join("");
   }
 
   var MODELS = {
-    plus: { title: "SeedSigner Plus signing device", palette: PALETTES.plus },
-    hat: {
-      title: "SeedSigner signing device, Waveshare 1.3 inch display hat",
-      palette: PALETTES.hat,
-    },
+    plus: { title: "SeedSigner Plus signing device" },
+    hat: { title: "SeedSigner signing device, Waveshare 1.3 inch display hat" },
   };
 
   function loadSvg(markup) {
@@ -654,7 +728,7 @@
     injectStyle();
     var id = "ssd" + (++instances);   // gradients and filters must not collide
     var L = layout(screenW, screenH, scale);
-    var P = model.palette;
+    var P = PALETTE;
 
     var svg = [
       '<svg class="ssd-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ',
@@ -663,7 +737,7 @@
       "<title>", model.title, "</title>",
       defs(id, L, P),
       bodyArt(id, L, P),
-      screenArt(id, L, P),
+      screenArt(id, L),
       padArt(id, L, live),
       keysArt(id, L, live),
       "</svg>",
@@ -733,8 +807,14 @@
      * Rasterised from a copy with its own stylesheet, so nothing on the page --
      * a hover, a key somebody is holding right now -- leaks into the picture.
      * `options.shadow === false` leaves out the drop shadow.
+     *
+     * A press is two things that move on different clocks (see MOTION), so a
+     * caller animating one can ask for them apart: `options.layer === "cap"` is
+     * the shell with the key down but its ring unlit, and "glow" is the ring
+     * alone on a transparent picture.
      */
     function snapshot(channel, options) {
+      var layer = options && options.layer;
       var copy = svgEl.cloneNode(true);
       // A recording frames the shell with a little even padding, too little for
       // the drop shadow's soft reach below it. Without the blur the path is
@@ -748,12 +828,20 @@
       copy.setAttribute("height", n(L.viewH));
       var held = copy.querySelectorAll(".ssd-down");
       for (var i = 0; i < held.length; i++) held[i].classList.remove("ssd-down");
-      if (channel) {
-        var key = copy.querySelector('[data-ssd-channel="' + channel + '"]');
-        if (key) key.classList.add("ssd-down");
+      var key = channel ? copy.querySelector('[data-ssd-channel="' + channel + '"]') : null;
+      if (key) key.classList.add("ssd-down");
+      if (layer === "glow") {
+        var ring = key && key.querySelector(".ssd-glow");
+        for (var c = copy.lastElementChild; c; ) {
+          var prev = c.previousElementSibling;
+          if (c.tagName !== "defs") copy.removeChild(c);
+          c = prev;
+        }
+        if (ring) copy.appendChild(ring);
       }
       var style = doc.createElementNS(SVG_NS, "style");
-      style.textContent = SNAPSHOT_CSS;
+      style.textContent = SNAPSHOT_CSS + (layer === "cap" ? "\n.ssd-glow{display:none}" :
+        layer === "glow" ? "\n.ssd-glow{opacity:1}" : "");
       copy.insertBefore(style, copy.firstChild);
       return Promise.all([
         loadSvg(new XMLSerializer().serializeToString(copy)),
@@ -771,11 +859,11 @@
       screenRect: { x: n(L.screenX), y: n(L.screenY), width: n(L.sw), height: n(L.sh) },
       // The shell itself, without the viewBox's padding, which is uneven: room
       // for the drop shadow below. What a recording centres.
-      bodyRect: { x: n(L.bodyX), y: n(L.bodyY), width: n(L.bodyW), height: n(L.bodyH) },
+      bodyRect: { x: n(L.bodyX), y: n(L.bodyY), width: n(L.bodyW), height: n(L.bodyH + L.depth) },
       width: n(L.viewW),
       height: n(L.viewH),
     };
   }
 
-  global.SeedSignerDevice = { render: render, CHANNEL: CHANNEL };
+  global.SeedSignerDevice = { render: render, CHANNEL: CHANNEL, MOTION: MOTION };
 })(typeof window !== "undefined" ? window : this);

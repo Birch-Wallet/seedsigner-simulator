@@ -2,8 +2,11 @@
 Recording: the Rec button hands back an MP4, framed as asked.
 
 Two framings on each of the two devices, and the device framing on both
-backgrounds. The screen alone has to come out at exactly the firmware's own
-size, 320x240 or 240x240, because that is the point of asking for it. The whole
+backgrounds. The screen alone has to come out at exactly twice the firmware's
+own size, 640x480 or 480x480: the smallest size at which H.264, which keeps
+colour at half resolution in 2x2 blocks, gives every LCD pixel a block of its
+own. A device recording has to put the LCD on the same grid -- a whole, even
+scale, starting on an even column and row. The whole
 device has to come out centred, with the same padding on every side of the
 shell -- a little of it, not the art's own uneven room for a drop shadow -- and
 rounded up to even, because H.264 will not take an odd size. Sizes are read out
@@ -150,6 +153,19 @@ def session(browser, display):
     probe = f"""SeedSignerDevice.render(document.createElement('div'),
         {{ screenWidth: {wanted[0]}, screenHeight: {wanted[1]} }})"""
     body = page.evaluate(f"() => {probe}.bodyRect")
+    # Pixel perfect: in a device recording each LCD pixel is a whole, even
+    # square of video pixels starting on an even row and column, which is what
+    # lines it up with H.264's 2x2 colour blocks.
+    lcd = page.evaluate(f"""() => {{
+      const shell = {probe}, size = SimRecorder.frameSize(shell), r = shell.screenRect;
+      return {{ x: size.x + r.x, y: size.y + r.y, w: r.width, h: r.height }};
+    }}""")
+    scale = lcd["w"] / wanted[0]
+    check(f"{display}: a device recording scales the LCD by a whole, even factor",
+          scale == int(scale) and scale % 2 == 0 and lcd["h"] == wanted[1] * scale,
+          f"{lcd['w']}x{lcd['h']} for {display}")
+    check(f"{display}: and puts it on an even column and row",
+          lcd["x"] % 2 == 0 and lcd["y"] % 2 == 0, f"at {lcd['x']},{lcd['y']}")
     # Whether the page should have offered it: asked at the size it films at.
     can = page.evaluate(f"""() => {{
       const size = SimRecorder.frameSize({probe});
@@ -171,7 +187,10 @@ def session(browser, display):
               name.startswith(f"seedsigner-{mode}-") and name.endswith(".mp4"), name)
         check(f"{tag}: the file is an MP4", brand is not None, repr(data[:12]))
         if mode == "screen":
-            check(f"{tag}: the video is {wanted[0]}x{wanted[1]}", size == wanted, str(size))
+            # Two video pixels to an LCD pixel each way: the smallest size at
+            # which H.264's half-resolution colour cannot smear one into the next.
+            film = (wanted[0] * 2, wanted[1] * 2)
+            check(f"{tag}: the video is {film[0]}x{film[1]}", size == film, str(size))
         elif size:
             across = size[0] - body["width"]
             down = size[1] - body["height"]
