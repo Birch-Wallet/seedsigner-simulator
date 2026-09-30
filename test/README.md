@@ -28,21 +28,24 @@ everything against it, and stops the server afterwards. The first run also
 downloads the Pyodide runtime and builds the firmware zip from its pinned upstream
 commit, which takes a few minutes; later runs reuse all of it.
 
-A subset, by substring on the step name -- the names are `leak_scan`, `device`, `record`, `threads`, `toasts`,
+A subset, by substring on the step name -- the names are `leak_scan`, `worker_csp`, `device`, `record`, `threads`, `toasts`,
 `build_info`, `firmware_choice`, `settings`, `persistent_settings`, `languages`, `scan_seedqr`, `scan_compact`, `scan_jsqr`, `scan_native`,
 `camera_stall`, `passphrase`, `image_entropy`, `mainnet`:
 
     python3 test/run.py scan          # everything with "scan" in the name
     python3 test/run.py leak          # just the leak scanner
 
-The whole suite runs against the release unless told otherwise; the
-development-branch firmware gets the same suite with
+The whole suite runs against the release unless told otherwise; any other
+firmware `UPSTREAM` pins gets the same suite with
 
     SIM_FIRMWARE=dev python3 test/run.py
+    SIM_FIRMWARE=pr-995 python3 test/run.py build_info firmware_choice settings scan_seedqr mainnet
 
-CI runs both. `build_info` and `firmware_choice` look at both firmwares either
-way, so they want both zips built (`./build/build-firmware-zip.sh` and
-`./build/build-firmware-zip.sh dev`).
+CI runs every section: the full suite for stock and dev, and for each pinned pull
+request a smoke run that is allowed to fail, since a pull request breaking here
+is news about the pull request. `build_info` and `firmware_choice` look at every
+firmware in `build/out/firmwares.json` either way, so they want the zips built
+(`./build/build-firmware-zip.sh <name>` for each).
 
 Individual files run on their own too, against a server you start yourself:
 
@@ -60,7 +63,7 @@ they are large and regenerate in seconds; set `SIM_KEEP_VIDEOS=1` to keep them.
 | `SIM_URL` | `http://127.0.0.1:$SIM_PORT` | where the tests look for the simulator |
 | `SIM_ARTIFACT_DIR` | `test/artifacts` | screenshots and videos |
 | `SIM_ASSETS` | `build/out`, `src/web` | where the firmware zips and the Pyodide runtime are |
-| `SIM_FIRMWARE` | `stock` | which firmware the suite runs: `stock`, the release, or `dev`, the development-branch pin; `dev` adds `?firmware=dev` to every page the tests open |
+| `SIM_FIRMWARE` | `stock` | which firmware the suite runs: `stock`, the release; `dev`, the development-branch pin; or `pr-<N>`, a pinned pull request. Anything but stock adds `?firmware=<name>` to every page the tests open |
 | `QR_KIND` | `qr` | which QR `test_scan.py` holds up: `qr` or `qr-compact` |
 | `SCAN_DECODER` | `zxing-wasm` | which decoder `test_scan.py` requires the page to pick: `zxing-wasm`, or `jsQR`, for which every request for zxing-wasm is refused and `BarcodeDetector` removed |
 
@@ -111,8 +114,9 @@ asks to be turned. The firmware's own screen stays 4:3 and unstretched
 throughout, since what the scan tests compare is that canvas.
 
 **`test_build_info.py`**: the **i** panel, and the one check the page
-makes about itself, for each firmware that has been built -- the release by its
-tag, the dev pin by its branch. The panel is where a visitor is told what is running, so
+makes about itself, for each firmware `firmwares.json` lists -- the release by its
+tag, the dev pin by its branch, a pull request by its number, title and link, with
+its half of the warning up. The panel is where a visitor is told what is running, so
 every value in it is compared here against something that is not the panel's own
 source: the tag, the commit and both hashes against `UPSTREAM`, and the Pyodide
 version against `build/fetch-assets.sh`. The translations row is compared against
@@ -127,13 +131,23 @@ and the panel has to say, in red, that the two hashes differ, and show the
 altered file's own hash. `build/out` is never touched, so there is nothing to put
 back if this fails halfway.
 
-**`test_firmware_choice.py`**: the two firmwares and the page's choice between
-them. A plain URL runs the release, from `seedsigner-stock.zip`; the device
-panel marks it as running, labels it by its tag, and offers dev labelled by
-branch and short commit. Choosing dev asks first, reloads with `?firmware=dev`,
-fetches `seedsigner-dev.zip` and boots it; dev's version helper, handed the
-checkout's `.git` files, names its branch, commit and commit date, and its own
-Version screen comes up without error.
+**`test_firmware_choice.py`**: the firmwares on offer and the page's choice
+between them. A plain URL runs the release, from `seedsigner-stock.zip`; the
+device panel lists exactly what `firmwares.json` does, in its order and under its
+groups, the release by its tag, dev by branch and short commit, each pull request
+by number and title; the filter keeps the release and dev and narrows the pull
+requests. Choosing dev asks first, reloads with `?firmware=dev`, fetches
+`seedsigner-dev.zip` and boots it, and its version helper, handed the checkout's
+`.git` files, names its branch, commit and commit date on its own Version screen.
+The first pinned pull request, if there is one, is switched to the same way, and
+names itself `pr-<N>`.
+
+**`test_worker_csp.py`**: the worker's network. The firmware runs in a worker,
+and a worker is governed only by the policy sent with its own script, not by the
+page's `<meta>` one. So `worker.js` has to arrive with a `connect-src 'self'`
+policy, and a probe worker served under that name from a second server has to
+be refused a fetch to another origin -- a closed port on this machine, so the
+answer never depends on the network.
 
 **`test_record.py`**: the record button hands back an MP4, framed as asked, on
 both devices. The screen alone has to come out at exactly twice the firmware's

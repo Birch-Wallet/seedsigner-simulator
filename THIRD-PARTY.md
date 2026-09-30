@@ -151,11 +151,18 @@ build does not include zint, which only the writer build uses.
 
 ---
 
-## 3. Built into `seedsigner-stock.zip` and `seedsigner-dev.zip` by `build/build-firmware-zip.sh`
+## 3. Built into `seedsigner-stock.zip`, `seedsigner-dev.zip` and `seedsigner-pr-<N>.zip` by `build/build-firmware-zip.sh`
 
 Everything in this section is redistributed inside the firmware zips: the
-release, and the optional development-branch pin, each built from its own
-section of `UPSTREAM` with its own dependency table. It is
+release, the optional development-branch pin, and any pinned pull requests, each
+built from its own section of `UPSTREAM` with the dependency table it names.
+
+A pull request's zip is SeedSigner's tree as a contributor proposes to change it,
+at the head commit pinned in its section, fetched from SeedSigner's own
+repository, where GitHub publishes it. Contributions to SeedSigner come under
+SeedSigner's MIT licence, and a pull request brings no dependency of its own
+here: `build/pr.sh` refuses one whose `requirements.txt` differs from the table
+it builds with. What is below for dev holds for each of them. It is
 Python, plus fonts, images and a few native binaries that come with it (below).
 Each package's licence text travels with it, in `licenses/` at the top level of
 the zip, alongside a `licenses/MANIFEST.txt` that repeats the table below. The
@@ -204,7 +211,9 @@ would change its published hash.
 * Commit: `708961a4163b1bd43eb15c4a26713649c63f6ccd`, the commit SeedSigner's own
   tree pins for its `src/seedsigner/resources/seedsigner-translations` submodule
   at the firmware commit above (both pins name the same one today). The build
-  reads it from there; nothing in this repository pins it separately.
+  reads it from there; nothing in this repository pins it separately. It fetches
+  from this repository and no other: a tree whose `.gitmodules` names another
+  source for the translations -- which a pull request could -- stops the build.
 * In the zip as: `seedsigner/resources/seedsigner-translations/l10n/<lang>/LC_MESSAGES/messages.mo`,
   with the repository's `LICENSE` beside them and in `licenses/seedsigner-translations.LICENSE`
 

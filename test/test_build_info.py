@@ -8,9 +8,10 @@ That last one is the only line with any weight in it, so most of this file is
 about it.
 
 Every value the panel shows is checked against something that is not the panel's
-own source, for each firmware that has been built: stock, the release, and dev,
-the development-branch pin. The tag (or, for dev, the branch), the commit and
-both hashes are read out of UPSTREAM here,
+own source, for each firmware the build has listed in firmwares.json: stock, the
+release; dev, the development-branch pin; and each pinned pull request. The tag
+(or the branch, or the pull request's number and title), the commit and both
+hashes are read out of UPSTREAM here,
 not out of build-info.json, because build-info.json is what feeds the panel and
 comparing the two would only prove the page can echo a file back. And the
 received hash is compared against sha256 of the zip on disk.
@@ -43,10 +44,15 @@ from harness import check, report
 
 from playwright.sync_api import sync_playwright
 
-# Every section of UPSTREAM the page can run, which is also the name the build
-# gives each zip. Each one built is checked; the suite's own firmware
-# (SIM_FIRMWARE) is the one the altered-zip check tampers with.
-FIRMWARES = ("stock", "dev")
+# The firmwares the build has listed, which is what the page offers. Each one is
+# checked; the suite's own firmware (SIM_FIRMWARE) is the one the altered-zip
+# check tampers with.
+def built_firmwares():
+    index = harness.find_asset("firmwares.json")
+    if not index:
+        return []
+    with open(index, encoding="utf-8") as handle:
+        return [entry["name"] for entry in json.load(handle)["firmwares"]]
 
 # The zip has to arrive and be hashed, which happens after Pyodide and its
 # binary packages have loaded. That is the whole cost of this file.
@@ -103,18 +109,35 @@ def describes(page, firmware):
 
     check(f"[{firmware}] the panel says which firmware is running",
           firmware in text(page, "#build-firmware"), text(page, "#build-firmware"))
-    # A release is named by its tag; the dev pin by its branch, and the panel
-    # says which it is showing.
+    # A release is named by its tag, the dev pin by its branch, a pull request by
+    # its number, and the panel says which it is showing.
     tag = upstream_field(firmware, "tag", required=False)
-    name, label = (tag, "Tag") if tag else (upstream_field(firmware, "branch"), "Branch")
+    pr = upstream_field(firmware, "pr", required=False)
+    if pr:
+        name, label = f"#{pr}", "Pull request"
+    elif tag:
+        name, label = tag, "Tag"
+    else:
+        name, label = upstream_field(firmware, "branch"), "Branch"
     check(f"[{firmware}] and the {label.lower()} UPSTREAM pins",
           text(page, "#build-tag") == name and text(page, "#build-tag-label") == label,
           f"{text(page, '#build-tag-label')}: {text(page, '#build-tag')}")
-    check(f"[{firmware}] and the opening line says which it is",
-          (name in text(page, "#firmware-line")) if tag
-          else ("development branch" in text(page, "#firmware-line")
-                and upstream_field(firmware, "commit")[:7] in text(page, "#firmware-line")),
-          text(page, "#firmware-line"))
+    line = text(page, "#firmware-line")
+    if pr:
+        title = upstream_field(firmware, "title")
+        says = f"pull request #{pr}" in line and title in line and "not yet reviewed" in line
+        check(f"[{firmware}] and links the pull request",
+              page.locator("#build-tag").get_attribute("href")
+              == re.sub(r"\.git$", "", upstream_field(firmware, "repo")) + f"/pull/{pr}",
+              page.locator("#build-tag").get_attribute("href"))
+        check(f"[{firmware}] and the warning says it is an unreviewed pull request",
+              f"pull request #{pr}" in text(page, "#warning"), text(page, "#warning"))
+    elif tag:
+        says = name in line
+    else:
+        says = ("development branch" in line
+                and upstream_field(firmware, "commit")[:7] in line)
+    check(f"[{firmware}] and the opening line says which it is", says, line)
     check(f"[{firmware}] and the commit UPSTREAM pins",
           text(page, "#build-commit") == upstream_field(firmware, "commit"),
           text(page, "#build-commit"))
@@ -223,7 +246,7 @@ def main() -> int:
         errors = []
         page.on("pageerror", lambda e: errors.append(str(e)))
 
-        built = [f for f in FIRMWARES if harness.find_asset(f"seedsigner-{f}.build-info.json")]
+        built = built_firmwares()
         check("the suite's own firmware is among those built",
               harness.FIRMWARE in built, f"built: {built}")
         for firmware in built:

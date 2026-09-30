@@ -1,6 +1,7 @@
 # Rebuilds each firmware zip on a clean runner and fails if it is not the file
-# UPSTREAM says it is: stock, the release, and dev, the development-branch pin,
-# each against its own section.
+# UPSTREAM says it is: stock, the release; dev, the development-branch pin; and
+# each pinned pull request, each against its own section. A pin that does not
+# reproduce is a broken pin, pull request or not, so none of these may fail.
 #
 # The most interesting claim this repository makes is that a firmware zip is the
 # pinned upstream SeedSigner tree plus its pinned dependencies and nothing else,
@@ -34,13 +35,30 @@ permissions:
   attestations: write
 
 jobs:
+  # Every firmware UPSTREAM pins -- stock, dev, and each pr-<N> -- as a JSON list
+  # for the matrix below, so adding or removing a pull request needs no edit here.
+  sections:
+    runs-on: ubuntu-24.04
+    outputs:
+      firmwares: ${{ steps.read.outputs.firmwares }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: read
+        run: |
+          set -euo pipefail
+          firmwares="$(sed -n 's/^\[\([a-z0-9-]*\)\]$/\1/p' UPSTREAM \
+              | python3 -c 'import json, sys; print(json.dumps(sys.stdin.read().split()))')"
+          echo "firmwares=${firmwares}" >> "$GITHUB_OUTPUT"
+          echo "${firmwares}"
+
   rebuild:
     name: rebuild (${{ matrix.firmware }})
+    needs: sections
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        firmware: [stock, dev]
+        firmware: ${{ fromJSON(needs.sections.outputs.firmwares) }}
     # Cloning upstream and its dependencies and writing the zip. Minutes, but
     # nothing here boots a browser.
     timeout-minutes: 20

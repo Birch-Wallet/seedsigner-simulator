@@ -18,6 +18,12 @@
 # tag is a name upstream has published and does not move. The sha is still the
 # pin; the tag only says which release it is.
 #
+# Each [pr-<N>] section is one SeedSigner pull request at the head it had when
+# build/pr.sh added or last updated it: somebody's proposed change, unreviewed,
+# pinned so it can be tried in the simulator and checked like everything else
+# here. build/pr.sh adds, moves and removes them; the page lists them apart and
+# says what they are.
+#
 # [dev] is the exception, on purpose: it is for trying what SeedSigner has merged
 # since that release. It is still one sha, not "whatever dev is now", so a build
 # of it is as reproducible and as checkable as the release's, and it moves only
@@ -50,3 +56,27 @@ branch = dev
 
 zip_sha256          = b05c203a83064ee0ee36fc8e57d5ed24fb2b19e0164f81a158005422074e2e38
 zip_contents_sha256 = 90897bbbfde4f07a376ad954838cbf1ac9bf04806dc828869a1132b67c7beeac
+
+# Pull request #995, proposed to SeedSigner and not yet merged.
+# https://github.com/SeedSigner/seedsigner/pull/995
+[pr-995]
+repo   = https://github.com/SeedSigner/seedsigner.git
+commit = 50c977a3ab8309136e133538b85f744b9cfd6661
+pr     = 995
+title  = [security] Verify PSBT input amounts before displaying the fee
+deps   = dev
+
+zip_sha256          = 31b37931b9044d5e875667d227915f674363a1d67804428b5cce99f5b9556e96
+zip_contents_sha256 = 93cdde07a6a568f392df4a839bb90103ad985245cbb6da82d67055f3652d03da
+
+# Pull request #1042, proposed to SeedSigner and not yet merged.
+# https://github.com/SeedSigner/seedsigner/pull/1042
+[pr-1042]
+repo   = https://github.com/SeedSigner/seedsigner.git
+commit = 38db4a4e0d8173a56fae724b952e6bca449cd3ea
+pr     = 1042
+title  = Parse the OP_RETURN push opcode instead of assuming OP_PUSHDATA1
+deps   = dev
+
+zip_sha256          = 64f7a04561c7d36ff9acc41d717dee5979111502f0993f4bc89dce2c81c1bcf4
+zip_contents_sha256 = 9150e15c0e5fc8018def68278a3b08e2c138ee8235e2078147bd1f8dc5fc921c

@@ -118,18 +118,37 @@ there without a certificate.
 
 ## Deploying it
 
-A real web server has one document root, so flatten the same three sources into one
-directory. The page, the worker and the shims all fetch each other by relative
-path, so everything sits side by side:
+On the server, from a checkout, after `git pull`, as the user that owns the web
+root:
+
+```sh
+./build/deploy.sh /srv/seedsigner-simulator --url https://sim.example.org
+```
+
+That is the whole release. It checks the tools, the Python and the committed
+files; fetches Pyodide and zxing-wasm; builds every firmware `UPSTREAM` pins and
+requires each zip to hash to its published sha256; assembles the site; keeps the
+current one as `/srv/seedsigner-simulator.previous` and prints the one command
+that puts it back; syncs the new one in (removing what the build no longer
+produces, except `.well-known/`; `--no-delete` keeps everything); and, with
+`--url`, checks the live site: the isolation headers, the worker's policy, every
+firmware zip's hash, and a font. Nothing in it needs `sudo`. The web server's own
+configuration is the one thing it leaves alone -- set that up once, below.
+
+What it does by hand, if you would rather: a real web server has one document
+root, so flatten the same three sources into one directory. The page, the worker
+and the shims all fetch each other by relative path, so everything sits side by
+side:
 
 ```sh
 dest=/srv/seedsigner-simulator
 mkdir -p "$dest"
 cp -R src/web/. "$dest/"          # the page, its scripts, icons, pyodide-e24b45d3/ and zxing-2416232a/
 cp src/shims/*.py "$dest/"
-cp build/out/seedsigner-stock.zip build/out/seedsigner-stock.build-info.json "$dest/"
-cp build/out/seedsigner-dev.zip build/out/seedsigner-dev.build-info.json "$dest/"   # only if you built dev
+cp build/out/seedsigner-*.zip build/out/seedsigner-*.build-info.json "$dest/"   # every firmware built
+cp build/out/firmwares.json "$dest/"                                            # the list the page offers
 cp -R build/out/fonts-* "$dest/"    # the other languages' fonts, fetched on first use
+chmod 755 "$dest"                   # the web server must be able to read it
 ```
 
 | In the served root | From | Notes |
@@ -145,7 +164,8 @@ cp -R build/out/fonts-* "$dest/"    # the other languages' fonts, fetched on fir
 | `browser_display.py`, `browser_camera.py`, `browser_threads.py` | `src/shims/` | fetched at boot and written into Pyodide's filesystem |
 | `seedsigner-stock.zip` | `build/out/` | the pinned `seedsigner` tree plus its pure-Python dependencies plus this repository's stand-in packages |
 | `fonts-<hash>/` | `build/out/` | the fonts Chinese, Japanese, Korean, Arabic and Thai need (~22 MB), fetched by the worker the first time the firmware draws one and checked against the sha256 the zip's `deferred-fonts.json` gives it. The name is a hash of what is in it, so cache it forever like Pyodide. Leave it out and those five languages fail to draw; every other language still works |
-| `seedsigner-dev.zip`, `seedsigner-dev.build-info.json` | `build/out/` | the development-branch firmware, from the `[dev]` pin; optional. The device panel offers it only when its build-info is served, so a deployment without it looks exactly as before |
+| `seedsigner-dev.zip`, `seedsigner-pr-<N>.zip` and their build-infos | `build/out/` | the development-branch firmware and each pinned pull request, from their sections of `UPSTREAM`; optional, about 2 MB each. The page offers what `firmwares.json` lists |
+| `firmwares.json` | `build/out/` | the list of firmwares the device panel offers, written by every build from the build-infos beside it. Without it the panel offers only the firmware running |
 | `seedsigner-stock.build-info.json` | `build/out/` | what the build is: pin, tag, published hashes, dependency versions. The page's **i** panel is filled from it, and says it cannot describe the build if it is missing |
 
 The shims sit next to the page rather than inside the firmware zip deliberately: it
@@ -167,6 +187,18 @@ server {
     add_header Cross-Origin-Opener-Policy   same-origin  always;
     add_header Cross-Origin-Embedder-Policy require-corp always;
     add_header Cross-Origin-Resource-Policy same-origin  always;
+
+    # The worker runs the firmware, and a worker is governed only by the policy
+    # sent with its own script -- the page's <meta> CSP does not reach it. This
+    # keeps whatever firmware is running, a release or a pull request, to this
+    # origin. The other three headers have to be repeated (see the traps below).
+    location = /worker.js {
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; connect-src 'self'; object-src 'none'; base-uri 'none'" always;
+        add_header Cache-Control "no-cache" always;
+        add_header Cross-Origin-Opener-Policy   same-origin  always;
+        add_header Cross-Origin-Embedder-Policy require-corp always;
+        add_header Cross-Origin-Resource-Policy same-origin  always;
+    }
 
     # The page and its scripts change every deploy: always ask whether they
     # have, so a deploy reaches returning visitors. Unchanged files come back
@@ -228,6 +260,8 @@ sim.example.org {
     }
     # The link preview may be shown by other sites (see the nginx notes).
     header /og-image.png Cross-Origin-Resource-Policy cross-origin
+    # The worker's own policy (see the nginx notes).
+    header /worker.js Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; connect-src 'self'; object-src 'none'; base-uri 'none'"
     file_server
 }
 ```
@@ -246,6 +280,7 @@ From the outside, before you even open a browser:
 
 ```sh
 curl -sI https://sim.example.org/ | grep -i cross-origin
+curl -sI https://sim.example.org/worker.js | grep -i content-security-policy   # connect-src 'self'
 ```
 
 In the page's console:

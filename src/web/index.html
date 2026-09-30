@@ -270,6 +270,14 @@
     border-radius: 8px; padding: .5rem .9rem;
   }
   .mainnet-only { display: none; }
+  /* Somebody's pull request, not a release: said beside the warning, in its
+     colours, for as long as it runs. */
+  .pr-only { display: none; }
+  body.pr-build .pr-only { display: inline; }
+  /* The pull request's sentence follows "Never enter a real seed phrase" or, on
+     Mainnet, a sentence that already ends in a full stop. */
+  body.mainnet .off-mainnet { display: none; }
+  body.pr-build .warn { color: #ffcf8a; border-color: #b45309; background: #251a0b; }
   body.mainnet .mainnet-only { display: inline; }
   body.mainnet #network {
     color: #e8c07a; border: 1px solid #4a3d22; background: #211b10;
@@ -364,7 +372,23 @@
     text-transform: uppercase; color: #7c848f;
   }
   .pop p { margin: 0; font-size: .88em; color: #c3cad3; }
-  .pick + .pop-title { margin-top: .5rem; }
+  .pick + .pop-title, #firmware-list + .pop-title { margin-top: .5rem; }
+  /* However many pull requests are pinned, the list scrolls inside the panel
+     rather than pushing the device picks off the screen. */
+  #firmware-list {
+    display: flex; flex-direction: column; gap: .5rem;
+    max-height: min(40vh, 18rem); overflow-y: auto; overscroll-behavior: contain;
+  }
+  #firmware-list .pop-title { margin: .35rem 0 0; font-size: .66rem; }
+  #firmware-list .pop-title:first-child { margin-top: 0; }
+  .pick .pr { display: flex; flex-direction: column; min-width: 0; gap: .1rem; }
+  .pick .pr-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pick .pr-number { font-variant-numeric: tabular-nums; color: #e3e7ec; }
+  #firmware-filter {
+    font: inherit; font-size: .88em; color: #e3e7ec; background: #101216;
+    border: 1px solid #2a2e35; border-radius: 8px; padding: .45rem .6rem;
+  }
+  #firmware-filter[hidden] { display: none; }
   .pick, .pop-actions button, .seg button {
     font: inherit; font-size: .9em; color: #c3cad3; cursor: pointer;
     background: #1d2026; border: 1px solid #2a2e35; border-radius: 8px;
@@ -466,7 +490,8 @@
     phrase</strong><span class="mainnet-only"
     id="warning-mainnet">. On Mainnet this page holds the real mainnet keys for
     whatever you give it, with no secure element under them: treat anything typed
-    in as public.</span></p>
+    in as public.</span><span class="pr-only" id="warning-pr"><span class="off-mainnet">. </span><span
+    class="mainnet-only"> </span><span id="warning-pr-text"></span></span></p>
     <details id="about">
       <summary aria-label="About this simulator" title="About this simulator">i</summary>
       <div>
@@ -549,10 +574,9 @@
       </button>
       <div class="pop" id="device-panel" role="dialog" aria-label="Device" hidden>
         <p class="pop-title">Firmware</p>
-        <button type="button" class="pick" data-firmware="stock">
-          SeedSigner release <small id="firmware-label-stock">stock</small></button>
-        <button type="button" class="pick" data-firmware="dev" hidden>
-          Development branch <small id="firmware-label-dev">dev</small></button>
+        <input type="search" id="firmware-filter" placeholder="Filter pull requests"
+               aria-label="Filter the firmware list" autocomplete="off" hidden>
+        <div id="firmware-list" role="group" aria-label="Firmware"></div>
         <p class="pop-title">Device</p>
         <button type="button" class="pick" data-display="320x240">
           SeedSigner Plus <small>320×240</small></button>
@@ -648,9 +672,14 @@ function writeSavedSettings(text) {
 }
 // Which firmware: stock is a SeedSigner release and the default, so a plain link
 // means what it always meant; ?firmware=dev is one commit of SeedSigner's
-// development branch. Each is its own zip, pinned in its own section of UPSTREAM.
-const FIRMWARE = new URLSearchParams(location.search).get("firmware") === "dev" ? "dev" : "stock";
-const FIRMWARES = ["stock", "dev"];
+// development branch, and ?firmware=pr-<N> the pinned head of pull request <N>.
+// Each is its own zip, pinned in its own section of UPSTREAM; what is on offer
+// is listed in firmwares.json. A name of any other shape is the release.
+const FIRMWARE_NAME = /^(stock|dev|pr-[0-9]{1,6})$/;
+const FIRMWARE = (() => {
+  const asked = new URLSearchParams(location.search).get("firmware") || "";
+  return FIRMWARE_NAME.test(asked) ? asked : "stock";
+})();
 
 // Which hardware: the SeedSigner Plus's 320x240, or the original Waveshare hat's
 // 240x240. The firmware lays every screen out for its panel at boot, so this is
@@ -762,28 +791,48 @@ function showVerdict() {
       + "Do not trust anything this page shows you.";
 }
 
-// What a firmware is called in the picker: a release by its tag, the dev pin by
-// its branch and short commit, the way the firmware's own About screen puts it.
+// What a firmware is called: a release by its tag, the dev pin by its branch and
+// short commit, the way the firmware's own Version screen puts it, and a pull
+// request by its number.
 function firmwareLabel(info) {
   const up = info.upstream;
+  if (info.pr) return "#" + info.pr.number;
   return up.tag && !up.branch ? up.tag : (up.branch || "dev") + "-" + up.commit.slice(0, 7);
 }
 
 function fillPanel(info) {
   const web = info.upstream.repo.replace(/\.git$/, "");
-  const release = !info.upstream.branch;
-  panelText("firmware-line", release
+  const pr = info.pr;
+  const release = !info.upstream.branch && !pr;
+  const short = info.upstream.commit.slice(0, 7);
+  panelText("firmware-line", pr
+    ? "Running pull request #" + pr.number + ", \u201c" + pr.title + "\u201d, at commit "
+      + short + ": a change somebody has proposed to SeedSigner, not yet reviewed or "
+      + "merged. Not a release, and not SeedSigner's own code until it is merged."
+    : release
     ? "Running stock SeedSigner " + firmwareLabel(info) + ", the firmware a plain "
       + "SeedSigner runs."
-    : "Running SeedSigner's development branch at commit "
-      + info.upstream.commit.slice(0, 7) + ": what SeedSigner has merged since its "
-      + "last release, as its developers are testing it. Not a release.");
-  panelText("build-firmware", release
+    : "Running SeedSigner's development branch at commit " + short + ": what "
+      + "SeedSigner has merged since its last release, as its developers are "
+      + "testing it. Not a release.");
+  panelText("build-firmware", pr
+    ? info.firmware + ", the head of pull request #" + pr.number + ", unreviewed"
+    : release
     ? info.firmware + ", SeedSigner as its own project publishes it, which is what "
       + "a plain device runs"
     : info.firmware + ", one commit of SeedSigner's development branch, not a release");
   panelLink("build-repo", web.replace(/^https:\/\//, ""), web);
-  if (release) {
+  if (pr) {
+    panelText("build-tag-label", "Pull request");
+    panelLink("build-tag", "#" + pr.number, pr.url);
+    panelText("pin-line", "This firmware is pinned to one commit of a pull request, "
+      + "the head it had when this site added it, so it is rebuilt and checked like "
+      + "a release. It moves only when this site moves it on purpose, and the pull "
+      + "request itself may since have changed.");
+    panelText("warning-pr-text", "This is pull request #" + pr.number + ": code proposed "
+      + "to SeedSigner and not yet reviewed, not a release.");
+    document.body.classList.add("pr-build");
+  } else if (release) {
     panelLink("build-tag", info.upstream.tag,
               web + "/releases/tag/" + encodeURIComponent(info.upstream.tag));
   } else {
@@ -823,22 +872,88 @@ function buildInfo(firmware) {
   });
 }
 
-// Every firmware's build-info: the running one fills the panel, and each one that
-// is served labels its pick. A deployment without the dev zip has no dev
-// build-info, and then no dev pick either.
-for (const firmware of FIRMWARES) {
-  const pick = document.querySelector('.pick[data-firmware="' + firmware + '"]');
-  buildInfo(firmware).then((info) => {
-    panelText("firmware-label-" + firmware, firmwareLabel(info));
-    pick.hidden = false;
-    if (firmware === FIRMWARE) fillPanel(info);
-  }).catch((error) => {
-    if (firmware !== FIRMWARE) return;
-    pick.hidden = false;
-    panelText("build-firmware", `build-info.json is not being served, so this `
-                              + `panel cannot say what was built (${error.message})`);
-  });
+buildInfo(FIRMWARE).then(fillPanel).catch((error) => {
+  panelText("build-firmware", `build-info.json is not being served, so this `
+                            + `panel cannot say what was built (${error.message})`);
+});
+
+// The firmware picker, from firmwares.json: the release, the development branch,
+// then each pinned pull request, newest first, grouped and labelled. A site
+// without the file still offers the firmware it is running, and nothing else.
+const firmwareList = document.getElementById("firmware-list");
+const firmwareFilter = document.getElementById("firmware-filter");
+const FIRMWARE_GROUPS = { release: "Release", dev: "Development branch",
+                          pr: "Pull requests, unreviewed" };
+// Past this many, a filter box: a long list of pull requests is found by number
+// or by a word of its title, not by scrolling.
+const FILTER_FROM = 8;
+
+function firmwarePick(entry) {
+  const pick = document.createElement("button");
+  pick.type = "button";
+  pick.className = "pick";
+  pick.dataset.firmware = entry.name;
+  const small = document.createElement("small");
+  if (entry.kind === "pr") {
+    const text = document.createElement("span");
+    text.className = "pr";
+    const number = document.createElement("span");
+    number.className = "pr-number";
+    number.textContent = "#" + entry.pr;
+    const title = document.createElement("span");
+    title.className = "pr-title";
+    title.textContent = entry.title;
+    text.append(number, title);
+    pick.title = "#" + entry.pr + " " + entry.title;
+    pick.dataset.search = ("#" + entry.pr + " " + entry.title).toLowerCase();
+    small.textContent = entry.commit.slice(0, 7);
+    pick.append(text, small);
+  } else {
+    pick.append(entry.kind === "release" ? "SeedSigner release" : "Development branch");
+    small.textContent = entry.label;
+    pick.append(small);
+  }
+  return pick;
 }
+
+function showFirmwares(entries) {
+  firmwareList.textContent = "";
+  let group = null;
+  for (const entry of entries) {
+    if (!FIRMWARE_NAME.test(entry.name)) continue;
+    if (entry.kind !== group) {
+      group = entry.kind;
+      const title = document.createElement("p");
+      title.className = "pop-title";
+      title.textContent = FIRMWARE_GROUPS[group] || group;
+      firmwareList.append(title);
+    }
+    firmwareList.append(firmwarePick(entry));
+  }
+  firmwareFilter.hidden = entries.length <= FILTER_FROM;
+  showWanted();
+}
+
+fetch("firmwares.json")
+  .then((response) => {
+    if (!response.ok) throw new Error(response.status + " " + response.statusText);
+    return response.json();
+  })
+  .then((index) => showFirmwares(index.firmwares || []))
+  .catch(() => showFirmwares([{ name: FIRMWARE,
+                                kind: FIRMWARE === "stock" ? "release"
+                                    : FIRMWARE === "dev" ? "dev" : "pr",
+                                label: FIRMWARE, commit: "", pr: FIRMWARE.slice(3),
+                                title: "" }]));
+
+// Narrows the list to the pull requests whose number or title holds what is
+// typed; the release and the development branch always stay.
+firmwareFilter.addEventListener("input", () => {
+  const needle = firmwareFilter.value.trim().toLowerCase();
+  for (const pick of firmwareList.querySelectorAll(".pick[data-search]")) {
+    pick.hidden = needle !== "" && !pick.dataset.search.includes(needle);
+  }
+});
 
 // Without cross-origin isolation there is no SharedArrayBuffer to make, and the
 // check at the bottom of this script says why rather than this line throwing.
@@ -1054,29 +1169,32 @@ document.addEventListener("keydown", (event) => {
 // the page reloads with ?firmware and ?display, keeping the rest.
 const devicePanel = document.getElementById("device-panel");
 const deviceConfirm = document.getElementById("device-confirm");
-const devicePicks = devicePanel.querySelectorAll(".pick");
 const wanted = { firmware: FIRMWARE, display: DISPLAY };
-for (const pick of devicePicks) {
+
+// One listener for every pick, since the firmware picks arrive with
+// firmwares.json, after this has run.
+devicePanel.addEventListener("click", (event) => {
+  const pick = event.target.closest(".pick");
+  if (!pick) return;
+  pick.blur();
   const kind = pick.dataset.firmware ? "firmware" : "display";
-  pick.setAttribute("aria-current", String(pick.dataset[kind] === wanted[kind]));
-  pick.addEventListener("click", () => {
-    pick.blur();
-    wanted[kind] = pick.dataset[kind];
-    showWanted();
-  });
-}
+  wanted[kind] = pick.dataset[kind];
+  showWanted();
+});
 
 // aria-current stays on what is running; a pick chosen but not yet switched to
 // is marked apart, so both changes can be chosen before one restart.
 function showWanted() {
-  for (const pick of devicePicks) {
+  for (const pick of devicePanel.querySelectorAll(".pick")) {
     const kind = pick.dataset.firmware ? "firmware" : "display";
     const current = kind === "firmware" ? FIRMWARE : DISPLAY;
+    pick.setAttribute("aria-current", String(pick.dataset[kind] === current));
     pick.dataset.wanted = String(pick.dataset[kind] === wanted[kind]
                                  && wanted[kind] !== current);
   }
   deviceConfirm.hidden = wanted.firmware === FIRMWARE && wanted.display === DISPLAY;
 }
+showWanted();
 document.getElementById("device-cancel").addEventListener("click", (event) => {
   event.currentTarget.blur();
   wanted.firmware = FIRMWARE;

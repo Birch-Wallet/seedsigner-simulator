@@ -54,7 +54,7 @@ a095b4fd85aab4528a667f400c72df80f75bc785850d0a96c796a8023e513379  src/shims/brow
 f63c4cff003ade4290e4341b47fb63063361db2f997de498fe7404ef665bdb9a  src/web/camera.js
 1ebb8267bb112587c9739a7f30fd9197c3e0137a0fcd4677f6a8677b6fa307f5  src/web/icon-192.png
 2c740b578143c67bbca1f950c33fe62d2a06fd22d5c0a7adf58348dc648e09bf  src/web/icon-512.png
-28abc56e690dd620506d49ab54b8428a11d4df648f439f62ab956790bcaefc82  src/web/index.html
+3fda77d5f1827fa49a758a5d84ef05390e8cf3951f59d8eb6bf7cb5495607998  src/web/index.html
 bc40c8a15196236b2314db0856f72ca0b49980cd5413b8c852a7349f5fee0859  src/web/jsQR.js
 c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08  src/web/licenses/Apache-2.0.txt
 3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf  src/web/licenses/CPython.txt
@@ -77,7 +77,7 @@ cc4d30bd20b9ffe0b15f59cf0de3e1930626ccd46a5146e36e4d619d7fecf63d  src/web/mp4-mu
 9ca9ab2ad8d8853f099a35bb4bd001f559d72611a3e4c8c3a14e95a964e8cec1  src/web/recorder.js
 d50343cdd799421d37e731c8513faefd7ddda9d300c247432eb6338f5a73db53  src/web/seedsigner-device.js
 e9331c9627a9841d95f2cede5ae3c3fe90a45093609b79fca973b4a03660ae43  src/web/sw.js
-98034ca8d293f8127481917ee5af2b8b53ff587d142781b2af86d1fb011de127  src/web/worker.js
+6e56606d0014895945fb1d8bf4922721f61a221e99f0079e7eb688ebf0ab868c  src/web/worker.js
 
 # The stand-in packages, which build/build-firmware-zip.sh copies out of the working
 # tree and into a firmware zip whole. Every other input to that zip is pinned by a

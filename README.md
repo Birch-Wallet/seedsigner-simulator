@@ -11,9 +11,11 @@ it, and nothing else. Or, if you choose it, one pinned commit of SeedSigner's
 Forked from [bitsagarob/seedsigner-simulator](https://github.com/bitsagarob/seedsigner-simulator),
 cut down to stock SeedSigner alone, and extended:
 
-- **Two firmwares.** The 0.8.7 release by default, or the development branch
-  pinned at one commit (`dev-cfaf443`), chosen from the device panel or with
-  `?firmware=dev`. Each is its own reproducible zip with published hashes.
+- **Several firmwares.** The 0.8.7 release by default; the development branch
+  pinned at one commit (`dev-cfaf443`, `?firmware=dev`); and pinned SeedSigner
+  pull requests for testing (`?firmware=pr-995`), each clearly marked as
+  unreviewed. Chosen from the device panel. Each is its own reproducible zip with
+  published hashes.
 - **Two devices.** The SeedSigner Plus at 320×240, or the original Waveshare
   1.3" hat at 240×240, switchable from the page.
 - **Animation.** The firmware's own animation threads run: the spinner, pulsing
@@ -109,6 +111,20 @@ they have changed), then moves the pin, builds it twice, and publishes the new
 hashes in `UPSTREAM`. Run the tests against it (`SIM_FIRMWARE=dev python3
 test/run.py`) and commit.
 
+SeedSigner pull requests are pinned the same way, one section each, to try a
+proposed change before it is merged:
+
+```sh
+./build/pr.sh add 995          # pin PR 995's head, build it twice, publish its hashes
+./build/pr.sh list             # what is pinned, against each PR's current state
+./build/pr.sh update --all     # move each to its current head
+./build/pr.sh remove 995       # drop it once it is merged or closed
+```
+
+A pull request is somebody's unreviewed code, and the page says so while one
+runs. It runs confined like any firmware here: the worker it runs in may talk
+to this site and nothing else.
+
 To run your own fork of SeedSigner, override the pin for one build:
 
 ```sh
@@ -142,8 +158,9 @@ needs editing too.
   ([`upstream-tests.yml`](.github/workflows/upstream-tests.yml)).
 - **The webcam really is the camera.** Same `DecodeQR`, same SeedQR /
   CompactSeedQR / PSBT / UR parsing; only the decoder is the browser's.
-- **One host, no network.** No backend, and the page's CSP allows it to connect
-  to nothing but its own origin.
+- **One host, no network.** No backend. The page's CSP allows it to connect to
+  nothing but its own origin, and so does the policy sent with `worker.js`, which
+  is where the firmware runs: a page's `<meta>` policy does not reach a worker.
 
 ## What works, and what does not
 
@@ -206,6 +223,14 @@ Static files, with two requirements that trip up every first attempt
 2. The page must be a secure context: `https`, or `localhost`. Browsers ignore
    those headers on plain `http` to any other address (a LAN or Tailscale IP, for
    instance), so the firmware cannot start there, and there is no camera either.
+
+`worker.js` also wants its own `Content-Security-Policy` header, which keeps the
+firmware to the site. Once the server is set up, one command builds everything
+and publishes it:
+
+```sh
+./build/deploy.sh /path/to/web/root --url https://your.site
+```
 
 ## Development
 

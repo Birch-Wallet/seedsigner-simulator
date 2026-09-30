@@ -3,14 +3,19 @@
 # Build a firmware zip: the Python tree the simulator unpacks into the Pyodide
 # filesystem at runtime.
 #
-# Two firmwares, each pinned in its own section of UPSTREAM:
+# One firmware per section of UPSTREAM, named after it:
 #
 #   ./build/build-firmware-zip.sh              ->  build/out/seedsigner-stock.zip
 #   ./build/build-firmware-zip.sh dev          ->  build/out/seedsigner-dev.zip
+#   ./build/build-firmware-zip.sh pr-995       ->  build/out/seedsigner-pr-995.zip
 #
 # stock is a SeedSigner release, pinned by tag and commit, and the default. dev is
 # one commit on SeedSigner's development branch, moved on purpose by
-# build/bump-dev.sh.
+# build/bump-dev.sh. Each pr-<N> is the head of one SeedSigner pull request,
+# added, moved and removed by build/pr.sh.
+#
+# Every build also rewrites build/out/firmwares.json, the list of firmwares the
+# page offers, from every build-info.json in the output directory.
 #
 # The point of this script is that you do not have to trust the zip that is
 # being served to you. Run it, and compare its sha256 to the one you downloaded.
@@ -59,13 +64,15 @@ KEEP_STAGING="no"
 
 usage() {
     cat <<'USAGE'
-Usage: build-firmware-zip.sh [stock|dev] [options]
+Usage: build-firmware-zip.sh [FIRMWARE] [options]
 
-  stock            The default: a SeedSigner release as its own project
-                   publishes it, pinned in the [stock] section of UPSTREAM
-                                                    ->  seedsigner-stock.zip
-  dev              One commit of SeedSigner's development branch, pinned in the
-                   [dev] section of UPSTREAM        ->  seedsigner-dev.zip
+  FIRMWARE         A section of UPSTREAM, and the name of the zip it builds:
+    stock          the default: a SeedSigner release as its own project
+                   publishes it                     ->  seedsigner-stock.zip
+    dev            one commit of SeedSigner's development branch
+                                                    ->  seedsigner-dev.zip
+    pr-<N>         the pinned head of SeedSigner pull request <N>, added by
+                   build/pr.sh                      ->  seedsigner-pr-<N>.zip
 
   --out DIR        Write the zip here (default: <repo>/build/out)
   --cache DIR      Cache downloaded PyPI artifacts here
@@ -100,8 +107,12 @@ while [ "$#" -gt 0 ]; do
         --keep-staging) KEEP_STAGING="yes"; shift ;;
         -h|--help)      usage; exit 0 ;;
         -*)             echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
-        stock|dev)      FIRMWARE="$1"; shift ;;
-        *)              echo "no such firmware: $1 (there are stock and dev)" >&2; exit 2 ;;
+        *)
+            # A section name: checked against UPSTREAM once it has been read.
+            case "$1" in
+                *[!a-z0-9-]*|-*|"") echo "not a firmware name: $1" >&2; exit 2 ;;
+            esac
+            FIRMWARE="$1"; shift ;;
     esac
 done
 
@@ -163,8 +174,9 @@ fi
 # firmware that cannot import.
 
 
-# One table per firmware, because each pins its own: DEPENDENCIES below is the
-# one for the firmware being built.
+# One table per dependency set. Each section of UPSTREAM names the one it builds
+# with (`deps =`); without one, stock uses the stock table and everything else
+# the dev table, since pull requests are proposed against dev.
 #
 # Each requirements.txt has two entries that do not belong in a zip:
 #
@@ -201,10 +213,6 @@ pypi|qrcode|qrcode|8.0|https://files.pythonhosted.org/packages/d7/db/6fc9631cac1
 git|urtypes|urtypes|7fb280eab3b3563dfc57d2733b0bf5cbc0a96a6a|https://github.com/selfcustody/urtypes.git|7fb280eab3b3563dfc57d2733b0bf5cbc0a96a6a|src
 DEPS
 
-case "${FIRMWARE}" in
-    stock) DEPENDENCIES="${DEPENDENCIES_STOCK}" ;;
-    dev)   DEPENDENCIES="${DEPENDENCIES_DEV}" ;;
-esac
 
 EXPECTED_TOP_LEVEL=(
     LICENSE.md
@@ -335,13 +343,16 @@ PY
 # than the source. Checking out the same commit gets the same files by
 # construction.
 git_checkout() {
-    local url="$1" commit="$2" dest="$3"
+    local url="$1" commit="$2" dest="$3" fallback_ref="${4:-}"
 
     mkdir -p "${dest}"
     GIT_TERMINAL_PROMPT=0 git -C "${dest}" init --quiet
     GIT_TERMINAL_PROMPT=0 git -C "${dest}" remote add origin "${url}"
-    GIT_TERMINAL_PROMPT=0 git -C "${dest}" fetch --quiet --depth 1 origin "${commit}" \
-        || die "could not fetch ${commit} from ${url}"
+    if ! GIT_TERMINAL_PROMPT=0 git -C "${dest}" fetch --quiet --depth 1 origin "${commit}"; then
+        [ -n "${fallback_ref}" ] || die "could not fetch ${commit} from ${url}"
+        GIT_TERMINAL_PROMPT=0 git -C "${dest}" fetch --quiet --depth 1 origin "${fallback_ref}" \
+            || die "could not fetch ${commit} or ${fallback_ref} from ${url}"
+    fi
     GIT_TERMINAL_PROMPT=0 git -C "${dest}" -c advice.detachedHead=false \
         checkout --quiet FETCH_HEAD
 
@@ -446,8 +457,40 @@ upstream_field() {
     ' "${UPSTREAM_FILE}"
 }
 
+# A key whose value is text rather than a token, such as a pull request's title:
+# everything after the first '=', trimmed, and nothing else touched.
+upstream_text_field() {
+    awk -v want="[${FIRMWARE}]" -v key="$1" '
+        /^\[/   { inside = ($0 == want); next }
+        inside {
+            eq = index($0, "=")
+            if (eq == 0) next
+            name = substr($0, 1, eq - 1); gsub(/[[:space:]]/, "", name)
+            if (name != key) next
+            value = substr($0, eq + 1); sub(/^[[:space:]]+/, "", value); sub(/[[:space:]]+$/, "", value)
+            print value
+        }
+    ' "${UPSTREAM_FILE}"
+}
+
+grep -qx "\[${FIRMWARE}\]" "${UPSTREAM_FILE}" || die "no [${FIRMWARE}] section in ${UPSTREAM_FILE}"
+
 PINNED_REPO="$(upstream_field repo)"
 PINNED_COMMIT="$(upstream_field commit)"
+PR_NUMBER="$(upstream_field pr)"
+PR_TITLE="$(upstream_text_field title)"
+
+# The dependency table this firmware builds with.
+DEPS_NAME="$(upstream_field deps)"
+[ -n "${DEPS_NAME}" ] || { [ "${FIRMWARE}" = "stock" ] && DEPS_NAME="stock" || DEPS_NAME="dev"; }
+case "${DEPS_NAME}" in
+    stock) DEPENDENCIES="${DEPENDENCIES_STOCK}" ;;
+    dev)   DEPENDENCIES="${DEPENDENCIES_DEV}" ;;
+    *)     die "[${FIRMWARE}] names deps = ${DEPS_NAME}, and there is no such table (stock or dev)" ;;
+esac
+case "${PR_NUMBER}" in
+    ""|*[!0-9]*) [ -z "${PR_NUMBER}" ] || die "[${FIRMWARE}] has pr = ${PR_NUMBER}, which is not a number" ;;
+esac
 
 [ -n "${PINNED_REPO}" ]   || die "no 'repo =' line in the [${FIRMWARE}] section of ${UPSTREAM_FILE}"
 [ -n "${PINNED_COMMIT}" ] || die "no 'commit =' line in the [${FIRMWARE}] section of ${UPSTREAM_FILE}"
@@ -491,7 +534,12 @@ else
 fi
 
 UPSTREAM_SRC="${SOURCES}/upstream"
-git_checkout "${UPSTREAM_REPO}" "${UPSTREAM_COMMIT}" "${UPSTREAM_SRC}"
+# A pull request's head is fetched by its commit like any other pin; GitHub also
+# publishes it as refs/pull/<N>/head, which is the way in should it ever refuse
+# the bare commit. Either way HEAD has to land on the pinned sha.
+PULL_REF=""
+[ -z "${PR_NUMBER}" ] || [ "${OVERRIDDEN}" = "yes" ] || PULL_REF="refs/pull/${PR_NUMBER}/head"
+git_checkout "${UPSTREAM_REPO}" "${UPSTREAM_COMMIT}" "${UPSTREAM_SRC}" "${PULL_REF}"
 
 # A ref is not an identity, so what it resolved to is what gets recorded from
 # here on. For the pin this changes nothing: git_checkout already refused to
@@ -515,6 +563,18 @@ if [ -n "${TRANSLATIONS_COMMIT}" ]; then
     TRANSLATIONS_REPO="$(git config -f "${UPSTREAM_SRC}/.gitmodules" \
         --get "submodule.${TRANSLATIONS_PATH}.url" || true)"
     [ -n "${TRANSLATIONS_REPO}" ] || die "the tree at ${UPSTREAM_COMMIT} pins ${TRANSLATIONS_PATH} but .gitmodules names no url for it"
+
+    # Where the translations come from is written in the tree being built, and a
+    # pull request's tree is whatever its author made it. Fetching any URL it
+    # names would let one point this build at a server of their choosing, or at
+    # a file:// repository on the machine running it, whose contents would then
+    # be packed into a zip and served. There is one translations repository, so
+    # that is the only one fetched; a tree that names another stops here.
+    case "${TRANSLATIONS_REPO}" in
+        https://github.com/SeedSigner/seedsigner-translations|https://github.com/SeedSigner/seedsigner-translations.git) ;;
+        *) die "the tree at ${UPSTREAM_COMMIT} fetches its translations from ${TRANSLATIONS_REPO},
+  not from https://github.com/SeedSigner/seedsigner-translations; refusing to fetch it" ;;
+    esac
 fi
 
 # ---------------------------------------------------------------------------
@@ -916,7 +976,7 @@ UPSTREAM_BRANCH="$(upstream_field branch)"
 PUBLISHED_ZIP_SHA256="$(upstream_field zip_sha256)"
 PUBLISHED_CONTENTS_SHA256="$(upstream_field zip_contents_sha256)"
 
-[ -n "${UPSTREAM_TAG}${UPSTREAM_BRANCH}" ] || die "no 'tag =' or 'branch =' line in the [${FIRMWARE}] section of ${UPSTREAM_FILE}"
+[ -n "${UPSTREAM_TAG}${UPSTREAM_BRANCH}${PR_NUMBER}" ] || die "no 'tag =', 'branch =' or 'pr =' line in the [${FIRMWARE}] section of ${UPSTREAM_FILE}"
 [ -n "${PUBLISHED_ZIP_SHA256}" ]       || die "no 'zip_sha256 =' line in the [${FIRMWARE}] section of ${UPSTREAM_FILE}"
 [ -n "${PUBLISHED_CONTENTS_SHA256}" ]  || die "no 'zip_contents_sha256 =' line in the [${FIRMWARE}] section of ${UPSTREAM_FILE}"
 
@@ -929,6 +989,7 @@ if [ "${OVERRIDDEN}" = "yes" ]; then
     INFO_FIRMWARE_TEXT="${FIRMWARE}, but NOT the published build: built from an SS_REPO / SS_COMMIT override rather than from the pin in UPSTREAM, so none of the hashes below will match and that is correct"
     UPSTREAM_TAG="none: an override is not a release"
     UPSTREAM_BRANCH=""
+    PR_NUMBER=""
 fi
 
 # The runtime is fetched by another script and pinned there, which makes that
@@ -947,6 +1008,8 @@ INFO_COMMIT="${UPSTREAM_COMMIT}" \
 INFO_COMMIT_TIME="${UPSTREAM_COMMIT_TIME}" \
 INFO_TAG="${UPSTREAM_TAG}" \
 INFO_BRANCH="${UPSTREAM_BRANCH}" \
+INFO_PR_NUMBER="${PR_NUMBER}" \
+INFO_PR_TITLE="${PR_TITLE}" \
 INFO_ZIP="seedsigner-${FIRMWARE}.zip" \
 INFO_ZIP_SHA256="${PUBLISHED_ZIP_SHA256}" \
 INFO_CONTENTS_SHA256="${PUBLISHED_CONTENTS_SHA256}" \
@@ -995,6 +1058,12 @@ if os.environ["INFO_TAG"]:
     info["upstream"]["tag"] = os.environ["INFO_TAG"]
 if os.environ["INFO_BRANCH"]:
     info["upstream"]["branch"] = os.environ["INFO_BRANCH"]
+# A pull request: its number, its title as pinned, and where to read it.
+if os.environ["INFO_PR_NUMBER"]:
+    number = int(os.environ["INFO_PR_NUMBER"])
+    web = os.environ["INFO_REPO"].removesuffix(".git")
+    info["pr"] = {"number": number, "title": os.environ["INFO_PR_TITLE"],
+                  "url": f"{web}/pull/{number}"}
 
 # The translations, which upstream's own tree pins, and the fonts served beside
 # the zip for them, with the hashes the zip's deferred-fonts.json holds them to.
@@ -1032,6 +1101,18 @@ with open(sys.argv[1], "w", encoding="utf-8") as handle:
     json.dump(info, handle, indent=2)
     handle.write("\n")
 PY
+
+# ---------------------------------------------------------------------------
+# 9. The list the page offers
+# ---------------------------------------------------------------------------
+#
+# Every firmware whose build-info sits in this directory, in the order the page
+# shows them: the release, the development branch, then pull requests, newest
+# first. Rewritten whole by every build, from the build-infos rather than from
+# UPSTREAM, so it lists exactly what has been built here and so will be served.
+
+step "writing ${OUT_DIR}/firmwares.json"
+python3 "${SCRIPT_DIR}/firmware-index.py" "${OUT_DIR}" || die "could not write firmwares.json"
 
 step "done"
 echo

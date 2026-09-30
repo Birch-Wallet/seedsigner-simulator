@@ -56,9 +56,15 @@ ONLY_ON_MAINNET = (
 
 
 def warning(page):
-    """What the warning says, and whether its mainnet half is showing."""
-    return (page.locator("#warning").inner_text(),
-            page.locator("#warning-mainnet").is_visible())
+    """What the warning says, and whether its mainnet half is showing.
+
+    Without the pull request's sentence a pull-request build adds: that one is
+    test_build_info.py's and test_firmware_choice.py's to check, and this file
+    asks the same question of every firmware."""
+    said = page.locator("#warning").inner_text()
+    if page.locator("#warning-pr").is_visible():
+        said = said.replace(page.locator("#warning-pr").inner_text(), "")
+    return (said, page.locator("#warning-mainnet").is_visible())
 
 
 def indicator(page):

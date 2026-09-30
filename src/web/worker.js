@@ -23,8 +23,10 @@ let bitcoinNetwork = "T";
 // previous visit, if Persistent Settings was on (see index.html).
 let networkExplicit = false;
 let savedSettings = "";
-// Which firmware zip: "stock", a release, or "dev", one commit of the
-// development branch. Anything else is stock.
+// Which firmware zip: "stock", a release; "dev", one commit of the development
+// branch; or "pr-<N>", the pinned head of a pull request. A name of any other
+// shape is stock, the same rule the page applies.
+const FIRMWARE_NAME = /^(stock|dev|pr-[0-9]{1,6})$/;
 let firmware = "stock";
 
 const STATE = 0;
@@ -49,7 +51,7 @@ self.onmessage = async (event) => {
     if (event.data.bitcoinNetwork) bitcoinNetwork = event.data.bitcoinNetwork;
     networkExplicit = !!event.data.networkExplicit;
     savedSettings = typeof event.data.savedSettings === "string" ? event.data.savedSettings : "";
-    firmware = event.data.firmware === "dev" ? "dev" : "stock";
+    firmware = FIRMWARE_NAME.test(event.data.firmware || "") ? event.data.firmware : "stock";
     try {
       await boot(event.data.width, event.data.height);
     } catch (error) {
@@ -75,7 +77,12 @@ async function boot(width, height) {
   post("status", { stage: "firmware-zip", message: "unpacking firmware…" });
   // Built by build/build-firmware-zip.sh from UPSTREAM and published with its
   // own pair of hashes, one zip per firmware.
-  const zip = await (await fetch("seedsigner-" + firmware + ".zip")).arrayBuffer();
+  const response = await fetch("seedsigner-" + firmware + ".zip");
+  if (!response.ok) {
+    throw new Error("seedsigner-" + firmware + ".zip is not being served ("
+                    + response.status + "); this site does not offer that firmware");
+  }
+  const zip = await response.arrayBuffer();
 
   // Hash what arrived, before unpacking it, and hand it to the page: the panel
   // shows it beside the sha256 UPSTREAM publishes. It has to be these bytes,
@@ -208,7 +215,8 @@ except BaseException:
 // that only SeedSigner OS writes, or off a device from git: the git command
 // first, which cannot run here, then the files in .git. So the files are what
 // the worker provides, from the build-info beside the zip: HEAD on the branch
-// the dev pin is on (or detached at a release's commit, with its tag), the ref
+// the dev pin is on, or on pr-<N> for a pull request (or detached at a
+// release's commit, with its tag), the ref
 // that names the commit, and the remote it came from. That is upstream's own
 // local-checkout path, and it is only ever read by the version helper. A
 // release that hardcodes its version, as 0.8.7 does, never looks. Without
@@ -217,12 +225,16 @@ async function checkout() {
   try {
     const response = await fetch("seedsigner-" + firmware + ".build-info.json");
     if (!response.ok) return null;
-    const up = (await response.json()).upstream || {};
+    const info = await response.json();
+    const up = info.upstream || {};
     if (!/^[0-9a-f]{40}$/.test(up.commit || "")) return null;
     const files = { config: `[remote "origin"]\n\turl = ${up.repo || ""}\n` };
-    if (up.branch) {
-      files.HEAD = `ref: refs/heads/${up.branch}\n`;
-      files["refs/heads/" + up.branch] = up.commit + "\n";
+    // A pull request is checked out the way one is locally, on a branch named
+    // for it, so the Version screen names the pull request.
+    const branch = info.pr ? "pr-" + info.pr.number : up.branch;
+    if (branch) {
+      files.HEAD = `ref: refs/heads/${branch}\n`;
+      files["refs/heads/" + branch] = up.commit + "\n";
     } else {
       files.HEAD = up.commit + "\n";
       if (up.tag) files["refs/tags/" + up.tag] = up.commit + "\n";

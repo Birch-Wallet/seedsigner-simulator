@@ -32,9 +32,12 @@ BASE_URL = os.environ.get("SIM_URL", f"http://127.0.0.1:{PORT}").rstrip("/")
 ARTIFACT_DIR = os.environ.get("SIM_ARTIFACT_DIR", os.path.join(REPO, "test", "artifacts"))
 
 # The firmware the page runs, built by build/build-firmware-zip.sh: stock, the
-# release, unless SIM_FIRMWARE=dev asks for the development-branch pin. Every
-# test runs against whichever it is, through sim_url() below.
-FIRMWARE = "dev" if os.environ.get("SIM_FIRMWARE") == "dev" else "stock"
+# release, unless SIM_FIRMWARE names another section of UPSTREAM -- dev, the
+# development-branch pin, or pr-<N>, a pinned pull request. Every test runs
+# against whichever it is, through sim_url() below.
+FIRMWARE = os.environ.get("SIM_FIRMWARE") or "stock"
+if not re.fullmatch(r"stock|dev|pr-[0-9]{1,6}", FIRMWARE):
+    raise SystemExit(f"SIM_FIRMWARE={FIRMWARE!r} is not a firmware name (stock, dev, pr-<N>)")
 FIRMWARE_ZIP = f"seedsigner-{FIRMWARE}.zip"
 
 # The build outputs, none of which is committed. build/build-firmware-zip.sh

@@ -36,6 +36,7 @@ PY = sys.executable
 # (name, argv relative to test/, does it need the server)
 SUITE = [
     ("leak_scan", ["leak_scan.py"], False),
+    ("worker_csp", ["test_worker_csp.py"], True),
     ("device", ["test_device.py"], True),
     ("record", ["test_record.py"], True),
     ("threads", ["test_threads.py"], True),

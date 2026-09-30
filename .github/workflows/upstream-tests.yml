@@ -39,15 +39,35 @@ permissions:
   contents: read
 
 jobs:
+  # Every firmware UPSTREAM pins -- stock, dev, and each pr-<N> -- as a JSON list
+  # for the matrix below, so adding or removing a pull request needs no edit here.
+  sections:
+    runs-on: ubuntu-24.04
+    outputs:
+      firmwares: ${{ steps.read.outputs.firmwares }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: read
+        run: |
+          set -euo pipefail
+          firmwares="$(sed -n 's/^\[\([a-z0-9-]*\)\]$/\1/p' UPSTREAM \
+              | python3 -c 'import json, sys; print(json.dumps(sys.stdin.read().split()))')"
+          echo "firmwares=${firmwares}" >> "$GITHUB_OUTPUT"
+          echo "${firmwares}"
+
   pytest:
     name: pytest (${{ matrix.firmware }})
+    needs: sections
     runs-on: ubuntu-24.04
+    # Upstream's own tests failing on a pull request is news about the pull
+    # request, not about this repository.
+    continue-on-error: ${{ startsWith(matrix.firmware, 'pr-') }}
     strategy:
       fail-fast: false
       matrix:
         # Each firmware's suite, against that firmware's own pins: stock, the
-        # release, and dev, the development-branch pin.
-        firmware: [stock, dev]
+        # release; dev, the development-branch pin; and each pinned pull request.
+        firmware: ${{ fromJSON(needs.sections.outputs.firmwares) }}
     # The stock suite runs in seconds on CPython; this is headroom, not cost.
     timeout-minutes: 20
 
@@ -119,17 +139,25 @@ jobs:
 
           echo "UPSTREAM_DIR=${dir}" >> "$GITHUB_ENV"
 
+          # The dependency table the section names (deps =), or stock for stock
+          # and dev for everything else, as the build decides it; the next step
+          # reads that table.
+          deps="$(field deps)"
+          [ -n "${deps}" ] || { [ "${FIRMWARE}" = "stock" ] && deps=stock || deps=dev; }
+          echo "DEPS_TABLE=DEPENDENCIES_$(echo "${deps}" | tr '[:lower:]' '[:upper:]')" >> "$GITHUB_ENV"
+
       - name: Work out this repository's pinned dependency set
         run: |
           set -euo pipefail
 
           # The authoritative list is this firmware's dependency table inside
-          # build-firmware-zip.sh (DEPENDENCIES_STOCK or DEPENDENCIES_DEV): the
+          # build-firmware-zip.sh (DEPENDENCIES_STOCK or DEPENDENCIES_DEV, as the
+          # clone step worked out from the section): the
           # same rows that decide what goes into the firmware zip, version and
           # sha256 and all. Read out of the script rather than duplicated here,
           # for the same reason the upstream sha is: a copy is a thing that can
           # drift.
-          table="DEPENDENCIES_$(echo "${FIRMWARE}" | tr '[:lower:]' '[:upper:]')"
+          table="${DEPS_TABLE}"
           awk -v table="${table}" '
               inside && /^DEPS$/   { exit }
               inside               { print }

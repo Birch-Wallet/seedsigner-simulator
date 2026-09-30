@@ -1,5 +1,7 @@
-# Runs the browser suite on every push and pull request, once per firmware:
-# stock, the release, and dev, the development-branch pin.
+# Runs the browser suite on every push and pull request, once per firmware
+# UPSTREAM pins: in full for stock, the release, and dev, the development-branch
+# pin; and a short smoke run for each pinned pull request, which is allowed to
+# fail -- a pull request that breaks here is news about the pull request.
 #
 # The things this needs are not in the repo. The firmware zip is built from the
 # pinned upstream SeedSigner commit, and the Pyodide runtime is 26MB of someone
@@ -20,14 +22,32 @@ permissions:
   contents: read
 
 jobs:
+  # Every firmware UPSTREAM pins -- stock, dev, and each pr-<N> -- as a JSON list
+  # for the matrix below, so adding or removing a pull request needs no edit here.
+  sections:
+    runs-on: ubuntu-24.04
+    outputs:
+      firmwares: ${{ steps.read.outputs.firmwares }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: read
+        run: |
+          set -euo pipefail
+          firmwares="$(sed -n 's/^\[\([a-z0-9-]*\)\]$/\1/p' UPSTREAM \
+              | python3 -c 'import json, sys; print(json.dumps(sys.stdin.read().split()))')"
+          echo "firmwares=${firmwares}" >> "$GITHUB_OUTPUT"
+          echo "${firmwares}"
+
   suite:
     name: suite (${{ matrix.firmware }})
+    needs: sections
     runs-on: ubuntu-24.04
+    continue-on-error: ${{ startsWith(matrix.firmware, 'pr-') }}
     strategy:
-      # One firmware failing says nothing about the other; let both finish.
+      # One firmware failing says nothing about another; let them all finish.
       fail-fast: false
       matrix:
-        firmware: [stock, dev]
+        firmware: ${{ fromJSON(needs.sections.outputs.firmwares) }}
     # Pyodide boots CPython in WebAssembly for every browser test, so this is
     # minutes rather than seconds even when everything passes.
     timeout-minutes: 45
@@ -52,25 +72,33 @@ jobs:
           key: assets-${{ hashFiles('build/*.sh', 'build/checksums.txt', 'UPSTREAM', '.github/workflows/test.yml') }}
 
       # fetch-assets.sh needs curl and python3; build-firmware-zip.sh also needs
-      # git. All three are on the runner image already. Both zips, whichever
-      # firmware this job runs: the page offers both, and the firmware-choice and
-      # build-info tests switch between them.
+      # git. All three are on the runner image already. Every zip, whichever
+      # firmware this job runs: the page offers them all, and the firmware-choice
+      # and build-info tests switch between them.
       - name: Build the firmware zips and fetch Pyodide and zxing-wasm
         if: steps.assets.outputs.cache-hit != 'true'
         run: |
+          set -euo pipefail
           ./build/fetch-assets.sh
-          ./build/build-firmware-zip.sh stock
-          ./build/build-firmware-zip.sh dev
+          for firmware in $(sed -n 's/^\[\([a-z0-9-]*\)\]$/\1/p' UPSTREAM); do
+            ./build/build-firmware-zip.sh "${firmware}"
+          done
 
       - name: Install Playwright
         run: |
           pip install playwright==1.47.0
           playwright install --with-deps chromium
 
+      # A pull request gets the steps that say whether it boots, describes itself
+      # and scans; the release and dev get everything.
       - name: Run the suite
         env:
           SIM_FIRMWARE: ${{ matrix.firmware }}
-        run: python3 test/run.py
+        run: |
+          case "${SIM_FIRMWARE}" in
+            pr-*) python3 test/run.py build_info firmware_choice settings scan_seedqr ;;
+            *)    python3 test/run.py ;;
+          esac
 
       # The screenshots are the readable half of a failure: they show what the
       # firmware was displaying when a check went red.

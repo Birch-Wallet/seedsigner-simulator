@@ -56,14 +56,19 @@ are served beside it in `fonts-<hash>/`, named with their hashes in the zip's
 into Pyodide's in-memory filesystem at `/firmware`, which becomes the working
 directory.
 
-There are two firmwares, each its own zip built the same way from its own section
-of `UPSTREAM`: `seedsigner-stock.zip`, the release and the default, and
-`seedsigner-dev.zip`, one commit of the development branch, which
-`build/bump-dev.sh` moves on purpose. The page picks one from `?firmware=dev`
-(anything else is stock), the device panel offers whichever are served, labelled
-from their `build-info.json`, and switching is a reload, like switching device.
-The worker is told which in its one `init` message and fetches that zip; nothing
-else about the boot differs.
+There is one firmware per section of `UPSTREAM`, each its own zip built the same
+way: `seedsigner-stock.zip`, the release and the default; `seedsigner-dev.zip`,
+one commit of the development branch, which `build/bump-dev.sh` moves on
+purpose; and `seedsigner-pr-<N>.zip`, the pinned head of a SeedSigner pull
+request, which `build/pr.sh` adds, moves and removes. Every build also rewrites
+`firmwares.json`, the list of what has been built, and that is what the device
+panel offers: grouped into release, development branch and unreviewed pull
+requests, scrolling, with a filter once it is long. The page picks one from
+`?firmware=` (a name of any other shape is the release) and switching is a
+reload, like switching device. The worker is told which in its one `init`
+message and fetches that zip; nothing else about the boot differs. A pull
+request's build puts its own half of the warning above the device for as long as
+it runs.
 
 The three `browser_*.py` shims are **not** in the zip. They are fetched separately
 and written into `/firmware` at boot, so the zip stays exactly what the build script
@@ -341,12 +346,19 @@ Raspberry Pi. These are small, but each one is a hard failure without it:
   blocks waiting for it to set up storage and without it the firmware hangs
   forever after the splash. Locks are reentrant for their owner, because work run
   inline runs inside whatever lock its starter held.
+- **The worker's network.** The firmware runs in the worker, and a worker is
+  governed only by the Content-Security-Policy sent with its own script: the
+  page's `<meta>` policy does not reach it. So `worker.js` is served with its own
+  (by `test/serve.py`, and by the server config in
+  [SELF-HOSTING](SELF-HOSTING.md)): `connect-src 'self'`, plus the `unsafe-eval`
+  and `wasm-unsafe-eval` Pyodide needs. Without it, firmware code -- a release,
+  or an unreviewed pull request -- could `fetch` any server that answers CORS.
 - **Which version it is.** Newer firmware names itself on Settings > Version
   from a `version.json` only SeedSigner OS writes, or off a device from git: the
   `git` command first, which cannot run here, then the files in `.git`. So the
   boot shim writes the few files a checkout of that commit would have, from the
-  build-info beside the zip: `HEAD` on the dev pin's branch (or detached at a
-  release's commit, with its tag), the ref naming the commit, and the remote. A
+  build-info beside the zip: `HEAD` on the dev pin's branch, or on `pr-<N>` for a
+  pull request (or detached at a release's commit, with its tag), the ref naming the commit, and the remote. A
   checkout dates itself by its newest `.py` file, and unpacking dated every file
   now, so they are all given the commit's own time, which build-info records.
   Only the version helper reads any of it; 0.8.7 hardcodes its version and never

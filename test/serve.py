@@ -19,7 +19,17 @@ Usage: python3 serve.py [--port N] [--host H] ROOT [ROOT ...]
 import argparse
 import os
 import sys
+import urllib.parse
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+# The worker's own policy. The page's CSP is a <meta> tag, and a <meta> policy
+# does not reach a dedicated worker: a worker is governed only by headers on its
+# own script. The firmware runs in the worker, so this is what keeps it to this
+# origin -- whichever firmware it is, a release or somebody's pull request.
+# Pyodide compiles WebAssembly and evaluates its own generated JS, hence the two
+# eval allowances; everything it fetches is on this origin.
+WORKER_CSP = ("default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; "
+              "connect-src 'self'; object-src 'none'; base-uri 'none'")
 
 
 class IsolatedHandler(SimpleHTTPRequestHandler):
@@ -52,6 +62,8 @@ class IsolatedHandler(SimpleHTTPRequestHandler):
         self.send_header("Cross-Origin-Opener-Policy", "same-origin")
         self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
         self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+        if os.path.basename(urllib.parse.urlsplit(self.path).path) == "worker.js":
+            self.send_header("Content-Security-Policy", WORKER_CSP)
         # A test that passes against a cached copy of the file it is meant to be
         # testing has proved nothing.
         self.send_header("Cache-Control", "no-store")
