@@ -315,6 +315,10 @@
     display: flex; align-items: center; justify-content: center; gap: .6rem;
   }
   #controls:not(.rec-offered) .rec-only { display: none; }
+  /* A panel open over a short screen can reach the title row, whose i button
+     sits above the page (it has to be above the About panel it opens); while a
+     panel is open, the bar that holds it goes above that. */
+  #controls:has(.pop:not([hidden])) { z-index: 95; }
   .ctl-wrap { position: relative; display: flex; }
   .ctl {
     display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
@@ -372,7 +376,32 @@
     text-transform: uppercase; color: #7c848f;
   }
   .pop p { margin: 0; font-size: .88em; color: #c3cad3; }
-  .pick + .pop-title, #firmware-list + .pop-title { margin-top: .5rem; }
+  .pick + .pop-title { margin-top: .5rem; }
+  .pop-col { display: flex; flex-direction: column; gap: .5rem; min-width: 0; min-height: 0; }
+  .pop-col + .pop-col { margin-top: .5rem; }
+  /* However tall the panel wants to be, it gets the room above the bar and no
+     more (--pop-room, set as it opens), and scrolls inside that; and it is
+     moved sideways (--pop-shift) so that it stays on the page. */
+  .pop {
+    max-height: var(--pop-room, 80vh); overflow-y: auto; overscroll-behavior: contain;
+    transform: translateX(calc(-50% + var(--pop-shift, 0px)));
+  }
+  /* A phone on its side has width to spare and little height: the firmware and
+     the device side by side, each column scrolling on its own, so the list,
+     the device picks and Switch are all in view at once. */
+  @media (max-height: 540px) and (min-width: 560px) {
+    /* Open only: an id outranks .pop[hidden], and a closed panel laid out as a
+       grid would sit invisible over the device and take its taps. */
+    #device-panel:not([hidden]) {
+      display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+      column-gap: 1rem; overflow: hidden;
+      width: min(38rem, calc(var(--page-w, 100vw) - 1.5rem));
+      max-width: min(38rem, calc(var(--page-w, 100vw) - 1.5rem));
+    }
+    #device-panel .pop-col { max-height: calc(var(--pop-room, 80vh) - 1.5rem); overflow-y: auto; }
+    #device-panel .pop-col + .pop-col { margin-top: 0; }
+    #device-panel #firmware-list { max-height: none; overflow: visible; }
+  }
   /* However many pull requests are pinned, the list scrolls inside the panel
      rather than pushing the device picks off the screen. */
   #firmware-list {
@@ -432,6 +461,16 @@
   body.compact #warn-row { width: auto; }
   body.compact .warn { font-size: .78em; padding: .3rem .6rem; }
   body.compact #about > summary { width: 2.2rem; height: 2.2rem; }
+  /* A phone on its side: every line of height is the device's. The title and
+     the warning go, and the i floats in the top right corner, over nothing
+     the device needs. The warning is still the first thing in the i panel, and
+     it is what the prompt to turn the phone says while it is held upright. */
+  body.touch.compact header, body.touch.compact #warning { display: none; }
+  body.touch.compact #top { gap: 0; }
+  body.touch.compact #about {
+    position: fixed; z-index: 91;
+    top: max(.4rem, env(safe-area-inset-top)); right: max(.5rem, env(safe-area-inset-right));
+  }
   /* Fullscreen: the device alone, filling the page, with only the control
      that brings the page back. */
   body.solo #app { overflow: hidden; }
@@ -573,20 +612,24 @@
         </svg>
       </button>
       <div class="pop" id="device-panel" role="dialog" aria-label="Device" hidden>
-        <p class="pop-title">Firmware</p>
-        <input type="search" id="firmware-filter" placeholder="Filter pull requests"
-               aria-label="Filter the firmware list" autocomplete="off" hidden>
-        <div id="firmware-list" role="group" aria-label="Firmware"></div>
-        <p class="pop-title">Device</p>
-        <button type="button" class="pick" data-display="320x240">
-          SeedSigner Plus <small>320×240</small></button>
-        <button type="button" class="pick" data-display="240x240">
-          Waveshare 1.3" hat <small>240×240</small></button>
-        <div id="device-confirm" hidden>
-          <p>The firmware restarts, and anything loaded in this session is lost.</p>
-          <div class="pop-actions">
-            <button type="button" id="device-cancel">Cancel</button>
-            <button type="button" id="device-switch">Switch</button>
+        <div class="pop-col" id="firmware-col">
+          <p class="pop-title">Firmware</p>
+          <input type="search" id="firmware-filter" placeholder="Filter pull requests"
+                 aria-label="Filter the firmware list" autocomplete="off" hidden>
+          <div id="firmware-list" role="group" aria-label="Firmware"></div>
+        </div>
+        <div class="pop-col" id="device-col">
+          <p class="pop-title">Device</p>
+          <button type="button" class="pick" data-display="320x240">
+            SeedSigner Plus <small>320×240</small></button>
+          <button type="button" class="pick" data-display="240x240">
+            Waveshare 1.3" hat <small>240×240</small></button>
+          <div id="device-confirm" hidden>
+            <p>The firmware restarts, and anything loaded in this session is lost.</p>
+            <div class="pop-actions">
+              <button type="button" id="device-cancel">Cancel</button>
+              <button type="button" id="device-switch">Switch</button>
+            </div>
           </div>
         </div>
       </div>
@@ -932,6 +975,7 @@ function showFirmwares(entries) {
   }
   firmwareFilter.hidden = entries.length <= FILTER_FROM;
   showWanted();
+  placePanel(devicePanel);
 }
 
 fetch("firmwares.json")
@@ -1035,8 +1079,9 @@ canvas.width = W; canvas.height = H;
 mountDevice(W, H);
 
 // Mobile first. A phone is for landscape: held upright it is asked to turn,
-// and on its side it is simply the page. Short pages put the title and warning
-// on one line so the device gets the height. Browsers can only lock the
+// and on its side it is simply the page, the device given the height: a touch
+// screen that short puts the title and warning away and floats the i in the
+// corner; any other short page puts the title and warning on one line. Browsers can only lock the
 // orientation from fullscreen, and iOS not even then, so asking is what works
 // everywhere.
 const canTurn = matchMedia("(pointer: coarse)").matches
@@ -1145,6 +1190,29 @@ function closePanels(except) {
   }
   if (except !== devicePanel) deviceConfirm.hidden = true;
 }
+// A panel opens upwards from the bar, so the room it has is the height above
+// the bar; on a phone on its side that is not much, and a panel taller than it
+// ran off the top of the screen. It is given that room as its maximum height,
+// and moved sideways if it would cross either edge of the page.
+const POP_MARGIN = 8;
+function placePanel(panel) {
+  if (panel.hidden) return;
+  const anchor = panel.parentElement.getBoundingClientRect();
+  const gap = parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.6;
+  panel.style.setProperty("--pop-room", Math.max(160, anchor.top - gap - POP_MARGIN) + "px");
+  panel.style.setProperty("--pop-shift", "0px");
+  const box = panel.getBoundingClientRect();
+  let shift = 0;
+  if (box.left < POP_MARGIN) shift = POP_MARGIN - box.left;
+  else if (box.right > innerWidth - POP_MARGIN) shift = innerWidth - POP_MARGIN - box.right;
+  panel.style.setProperty("--pop-shift", Math.round(shift) + "px");
+}
+function placeOpenPanels() {
+  for (const [, panel] of panels) placePanel(panel);
+}
+addEventListener("resize", placeOpenPanels);
+addEventListener("orientationchange", placeOpenPanels);
+
 for (const [button, panel] of panels) {
   button.addEventListener("click", () => {
     const opening = panel.hidden;
@@ -1152,6 +1220,7 @@ for (const [button, panel] of panels) {
     panel.hidden = !opening;
     button.setAttribute("aria-expanded", String(opening));
     if (!opening && panel === devicePanel) deviceConfirm.hidden = true;
+    placePanel(panel);
     button.blur();
   });
 }
@@ -1193,6 +1262,7 @@ function showWanted() {
                                  && wanted[kind] !== current);
   }
   deviceConfirm.hidden = wanted.firmware === FIRMWARE && wanted.display === DISPLAY;
+  placePanel(devicePanel);
 }
 showWanted();
 document.getElementById("device-cancel").addEventListener("click", (event) => {

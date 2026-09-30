@@ -21,10 +21,12 @@ one, because a hardware button does not repeat either.
 **Landscape, on a phone.** A landscape device fitted to a portrait phone's width
 draws keys under 20 pixels across, which is not a thumb target. So a phone held
 upright is asked to turn -- the simulator is hidden behind a prompt that says
-so, and still carries the warning -- and on its side it is simply the page, with
-title, warning, device and control bar on one screen. Checked: the prompt comes
-and goes with the turn, nothing is off the screen sideways, how big the keys and
-the bar's buttons come out, and that a tap on a drawn key lands on that key.
+so, and still carries the warning -- and on its side every line of height is the
+device's: the title and the warning are put away, the i floats in the top right
+corner clear of the device, and device and control bar are on one screen.
+Checked: the prompt comes and goes with the turn, nothing is off the screen
+sideways, the i still opens and warns, how big the keys and the bar's buttons
+come out, and that a tap on a drawn key lands on that key.
 
 **The shell can have the screen.** Fullscreen gives the device the whole page
 for the biggest keys, and the firmware's own 320x240 screen keeps its shape,
@@ -68,7 +70,7 @@ def upright(page):
 
 def box_of(page, selector):
     box = page.locator(selector).bounding_box()
-    return {"top": box["y"], "bottom": box["y"] + box["height"]}
+    return {**box, "top": box["y"], "bottom": box["y"] + box["height"]}
 
 
 # As on iOS, which has no fullscreen API: what is checked here is the page's
@@ -135,23 +137,28 @@ def main() -> int:
         check("and turning it is not taken as asking for fullscreen",
               not page.evaluate("() => document.body.classList.contains('solo')"))
 
-        # The title, then the warning, then the device, then the controls. Read
-        # off the rendered boxes rather than off the source order, because
-        # either one can be moved without the other. The warning is the point:
-        # a sentence saying not to type a real seed has to be read before the
-        # keyboard is.
-        title = box_of(page, "h1")
-        warn = box_of(page, "#app p.warn")
+        # On its side a phone gives the device every line of height it has: the
+        # title and the warning are put away, and the i floats in the top right
+        # corner, clear of the device. The warning was on the prompt to turn the
+        # phone a moment ago, and it is the first thing the i panel says.
+        check("the title and the warning are put away to give the device the height",
+              not page.locator("h1").is_visible() and not page.locator("#warning").is_visible())
         device = box_of(page, "#device")
         bar = box_of(page, "#controls")
-        # On a short page the title and the warning share a line, which is
-        # still before the device.
-        check("the title is not below the simulator warning",
-              title["top"] < warn["bottom"],
-              f"title at {int(title['top'])}, warning at {int(warn['top'])}")
-        check("the simulator warning sits above the device",
-              warn["bottom"] <= device["top"],
-              f"warning ends at {int(warn['bottom'])}, device starts at {int(device['top'])}")
+        about = box_of(page, "#about > summary")
+        check("the i sits in the top right corner",
+              about["top"] <= 16 and PHONE_SIDEWAYS["width"] - (about["x"] + about["width"]) <= 16,
+              f"at {int(about['x'])},{int(about['top'])} of {PHONE_SIDEWAYS['width']}")
+        check("clear of the device",
+              about["x"] >= device["x"] + device["width"] or about["bottom"] <= device["top"],
+              f"i {int(about['x'])}..{int(about['x'] + about['width'])}, "
+              f"device {int(device['x'])}..{int(device['x'] + device['width'])}")
+        page.locator("#about > summary").click()
+        page.wait_for_timeout(300)
+        check("and it still opens, and warns",
+              "Never treat this as secure" in page.locator("#about > div").inner_text())
+        page.locator("#about > summary").click()
+        page.wait_for_timeout(300)
         check("and the control bar is under the device",
               device["bottom"] <= bar["top"],
               f"device ends at {int(device['bottom'])}, bar starts at {int(bar['top'])}")
@@ -160,7 +167,7 @@ def main() -> int:
           return app.scrollHeight <= app.clientHeight + 1
               && document.documentElement.scrollWidth <= innerWidth + 1;
         }""")
-        check("title, warning, device and bar all fit on one screen",
+        check("device and bar all fit on one screen",
               fits and bar["bottom"] <= PHONE_SIDEWAYS["height"] + 1,
               f"bar ends at {int(bar['bottom'])} of {PHONE_SIDEWAYS['height']}")
         sizes = [min(b["width"], b["height"]) for b in

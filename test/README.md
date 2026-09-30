@@ -100,9 +100,11 @@ one press of its own key, and its square screen no control either.
 Then the page on a phone, which is landscape-first. Held upright, the simulator
 is hidden behind a prompt to turn the phone, and the prompt still carries the
 never-enter-a-real-seed warning. Turned sideways, the prompt goes, turning is not
-taken as a request for fullscreen, title, warning, device and control bar come in
-that order down the page and all fit on one screen without scrolling, the bar's
-buttons are 44 pixels, and a tap on a drawn key lands on that key. Quick taps
+taken as a request for fullscreen, the title and the warning are put away so the
+device gets the height, the i floats in the top right corner clear of the device
+and still opens and warns, device and control bar fit on one screen without
+scrolling, the bar's buttons are 44 pixels, and a tap on a drawn key lands on
+that key. Quick taps
 are presses, never a zoom: three fast taps on a key are three presses, and every
 touch on a key -- or a quick second touch anywhere else that is not a control --
 is cancelled for the browser, which is what keeps iOS Safari from reading it as
