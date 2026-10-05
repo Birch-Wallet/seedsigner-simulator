@@ -34,9 +34,13 @@
 <style>
   /* The page is one screen, laid out for a landscape phone first: title and
      warning on top, the device taking whatever height is left, the control bar
-     under it. --page-w and --page-h are the page's own size. A phone held
-     upright gets a prompt to turn it instead (body.upright, set by the
-     script). */
+     under it. --page-w and --page-h are the page's own size. The viewport
+     units below only hold until the script runs: from then on it sets both in
+     pixels from what it measures, because after a turn iOS keeps these units
+     at the old size for a moment, longest in a Home Screen web app, and a
+     device fitted to that is drawn portrait-wide and off to one side. A
+     phone held upright gets a prompt to turn it instead (body.upright, set by
+     the script). */
   :root { color-scheme: dark; --page-w: 100vw; --page-h: 100vh; }
   @supports (height: 100dvh) { :root { --page-w: 100dvw; --page-h: 100dvh; } }
   /* Taps are taps. Two quick ones on a phone are two key presses, never a
@@ -71,6 +75,18 @@
     background:
       radial-gradient(28rem 22rem at 50% 42%, rgba(247,147,26,.16), rgba(247,147,26,0) 70%),
       #0b0c0e;
+  }
+  /* A Home Screen app that has been on its side stays there. iOS lets no web
+     app lock the orientation, not even one on the Home Screen, so when the
+     phone is turned back upright the page is turned the other way inside the
+     screen instead (body.turned, by --turn, both set by the script), which
+     leaves it where it was on the glass. The page keeps its landscape size,
+     the script having swapped --page-w and --page-h, and is centred on the
+     screen so that turning it about its middle fills it exactly. */
+  body.turned { overflow: hidden; }
+  body.turned #app {
+    position: fixed; left: 50%; top: 50%;
+    transform: translate(-50%, -50%) rotate(var(--turn, 0deg));
   }
   .turn-kicker {
     margin: 0; font-size: .72rem; font-weight: 700; letter-spacing: .2em;
@@ -388,25 +404,26 @@
   }
   /* A phone on its side has width to spare and little height: the firmware and
      the device side by side, each column scrolling on its own, so the list,
-     the device picks and Switch are all in view at once. */
-  @media (max-height: 540px) and (min-width: 560px) {
-    /* Open only: an id outranks .pop[hidden], and a closed panel laid out as a
-       grid would sit invisible over the device and take its taps. */
-    #device-panel:not([hidden]) {
-      display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
-      column-gap: 1rem; overflow: hidden;
-      width: min(38rem, calc(var(--page-w, 100vw) - 1.5rem));
-      max-width: min(38rem, calc(var(--page-w, 100vw) - 1.5rem));
-    }
-    #device-panel .pop-col { max-height: calc(var(--pop-room, 80vh) - 1.5rem); overflow-y: auto; }
-    #device-panel .pop-col + .pop-col { margin-top: 0; }
-    #device-panel #firmware-list { max-height: none; overflow: visible; }
+     the device picks and Switch are all in view at once. A class the script
+     sets from the page's size (body.sideways) rather than a media query, which
+     would ask the screen, and a page turned inside it is not the screen's
+     shape. */
+  /* Open only: an id outranks .pop[hidden], and a closed panel laid out as a
+     grid would sit invisible over the device and take its taps. */
+  body.sideways #device-panel:not([hidden]) {
+    display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    column-gap: 1rem; overflow: hidden;
+    width: min(38rem, calc(var(--page-w, 100vw) - 1.5rem));
+    max-width: min(38rem, calc(var(--page-w, 100vw) - 1.5rem));
   }
+  body.sideways #device-panel .pop-col { max-height: calc(var(--pop-room, 80vh) - 1.5rem); overflow-y: auto; }
+  body.sideways #device-panel .pop-col + .pop-col { margin-top: 0; }
+  body.sideways #device-panel #firmware-list { max-height: none; overflow: visible; }
   /* However many pull requests are pinned, the list scrolls inside the panel
      rather than pushing the device picks off the screen. */
   #firmware-list {
     display: flex; flex-direction: column; gap: .5rem;
-    max-height: min(40vh, 18rem); overflow-y: auto; overscroll-behavior: contain;
+    max-height: min(calc(var(--page-h) * .4), 18rem); overflow-y: auto; overscroll-behavior: contain;
   }
   #firmware-list .pop-title { margin: .35rem 0 0; font-size: .66rem; }
   #firmware-list .pop-title:first-child { margin-top: 0; }
@@ -484,8 +501,9 @@
   body.solo #fullscreen { position: fixed; z-index: 62; top: .5rem; right: .5rem; }
   @media (max-width: 30rem) {
     h1 { font-size: 1.3rem; }
-    #build dl { grid-template-columns: 1fr; gap: 0; }
-    #build dd { margin: 0 0 .5rem; }
+    /* Not on a turned page: the screen is narrow, the page on it is not. */
+    body:not(.turned) #build dl { grid-template-columns: 1fr; gap: 0; }
+    body:not(.turned) #build dd { margin: 0 0 .5rem; }
   }
 </style>
 </head>
@@ -796,7 +814,7 @@ document.addEventListener("keydown", (event) => {
 // Where the i actually is, so the panel's text starts below it.
 aboutPanel.addEventListener("toggle", () => {
   if (!aboutPanel.open) return;
-  const icon = aboutPanel.querySelector("summary").getBoundingClientRect();
+  const icon = pageBox(aboutPanel.querySelector("summary"));
   aboutPanel.style.setProperty("--about-top", Math.round(icon.bottom + 20) + "px");
 });
 
@@ -1087,12 +1105,72 @@ mountDevice(W, H);
 const canTurn = matchMedia("(pointer: coarse)").matches
              || navigator.maxTouchPoints > 0;
 if (canTurn) document.body.classList.add("touch");
+
+// Opened from the Home Screen (standalone, with no Safari around it), a phone
+// that has been on its side stays on its side. Upright at first, it is asked
+// to turn like any other page; once it has, turning it back upright turns the
+// page the other way inside the screen (body.turned) instead of asking again.
+// iOS will not lock the orientation for a web app, so this is the lock. In a
+// browser tab the prompt comes back, as a page there is one of many.
+const standalone = navigator.standalone === true
+                || matchMedia("(display-mode: standalone)").matches;
+if (standalone) document.body.classList.add("standalone");
+// How far the screen is turned from the phone's own upright: 90 with the
+// phone turned anticlockwise onto its side, -90 clockwise. window.orientation
+// where there is one, which is all of iOS; otherwise the standard angle, which
+// counts -90 as 270.
+function screenAngle() {
+  if (typeof window.orientation === "number") return window.orientation;
+  const angle = screen.orientation ? screen.orientation.angle : 0;
+  return angle > 180 ? angle - 360 : angle;
+}
+let side = null;  // the screen's angle when the phone was last on its side
+let turn = 0;     // how far the page is turned inside the screen, in degrees
 function layOut() {
-  const width = document.documentElement.clientWidth;
-  const height = window.innerHeight;
+  let width = document.documentElement.clientWidth;
+  let height = window.innerHeight;
+  if (standalone && canTurn && width > height && height <= 640) {
+    const angle = screenAngle();
+    if (angle === 90 || angle === -90) side = angle;
+    else if (side === null) side = 90;
+  }
+  // Upright again after that, the page is turned by the difference, which
+  // puts it back where it was on the glass, and laid out at the size it had.
+  // An angle that has not caught up with the turn yet (iOS can still report
+  // the old one with the first resize) is taken as plain upright; the
+  // orientationchange that follows puts that right.
+  turn = 0;
+  if (side !== null && height > width) {
+    turn = ((side - screenAngle()) % 360 + 540) % 360 - 180;
+    if (turn !== 90 && turn !== -90) turn = side;
+    [width, height] = [height, width];
+  }
   const upright = canTurn && height > width && width <= 640;
   document.body.classList.toggle("upright", upright);
+  document.body.classList.toggle("turned", turn !== 0);
   document.body.classList.toggle("compact", height < 560);
+  document.body.classList.toggle("sideways", height <= 540 && width >= 560);
+  // The page's size, as measured, in place of the viewport units the CSS
+  // starts with: those lag a turn on iOS, and these are already right. And
+  // on a turned page they are the page's, not the screen's.
+  const root = document.documentElement.style;
+  root.setProperty("--page-w", width + "px");
+  root.setProperty("--page-h", height + "px");
+  root.setProperty("--turn", turn + "deg");
+}
+
+// Where an element is, in the page's own frame. getBoundingClientRect answers
+// in the screen's, which on a turned page is a quarter turn off, so the box is
+// turned back against the page's own box on the screen.
+function pageBox(el) {
+  const box = el.getBoundingClientRect();
+  if (!turn) return box;
+  const page = document.getElementById("app").getBoundingClientRect();
+  return turn === 90
+    ? { left: box.top - page.top, right: box.bottom - page.top,
+        top: page.right - box.right, bottom: page.right - box.left }
+    : { left: page.bottom - box.bottom, right: page.bottom - box.top,
+        top: box.left - page.left, bottom: box.right - page.left };
 }
 
 // The height left for the device: the page's, less everything else on it and
@@ -1115,8 +1193,33 @@ function fitDevice() {
 }
 layOut();
 fitDevice();
-addEventListener("resize", () => { layOut(); fitDevice(); });
-addEventListener("orientationchange", () => { layOut(); fitDevice(); });
+
+// A turn is not one event. iOS may fire resize or orientationchange before the
+// new size has settled and then not fire again, so after each one the size,
+// and the screen's angle, which can lag it, are watched frame by frame and the
+// page laid out again whenever they move, until they have held still for six
+// frames (or a second has gone by). One watch at a time: an event during it
+// lays out at once and leaves the watching to it.
+// Not visualViewport's resize: Safari changes innerHeight on a pinch-zoom, and
+// listening there would shrink the page under someone zooming in.
+let settling = 0;
+function relayOut() {
+  layOut();
+  fitDevice();
+  if (settling) return;
+  let last = "", still = 0, frames = 0;
+  const watch = () => {
+    const size = document.documentElement.clientWidth + "x" + window.innerHeight
+               + "@" + screenAngle();
+    if (size === last) still += 1;
+    else { still = 0; last = size; layOut(); fitDevice(); }
+    frames += 1;
+    settling = still < 6 && frames < 60 ? requestAnimationFrame(watch) : 0;
+  };
+  settling = requestAnimationFrame(watch);
+}
+addEventListener("resize", relayOut);
+addEventListener("orientationchange", relayOut);
 if (window.ResizeObserver) {
   const refit = new ResizeObserver(fitDevice);
   for (const el of app.children) if (el !== stage) refit.observe(el);
@@ -1197,14 +1300,15 @@ function closePanels(except) {
 const POP_MARGIN = 8;
 function placePanel(panel) {
   if (panel.hidden) return;
-  const anchor = panel.parentElement.getBoundingClientRect();
+  const anchor = pageBox(panel.parentElement);
   const gap = parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.6;
   panel.style.setProperty("--pop-room", Math.max(160, anchor.top - gap - POP_MARGIN) + "px");
   panel.style.setProperty("--pop-shift", "0px");
-  const box = panel.getBoundingClientRect();
+  const box = pageBox(panel);
+  const pageWidth = turn ? app.offsetWidth : innerWidth;
   let shift = 0;
   if (box.left < POP_MARGIN) shift = POP_MARGIN - box.left;
-  else if (box.right > innerWidth - POP_MARGIN) shift = innerWidth - POP_MARGIN - box.right;
+  else if (box.right > pageWidth - POP_MARGIN) shift = pageWidth - POP_MARGIN - box.right;
   panel.style.setProperty("--pop-shift", Math.round(shift) + "px");
 }
 function placeOpenPanels() {
