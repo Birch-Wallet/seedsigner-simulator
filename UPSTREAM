@@ -61,13 +61,13 @@ zip_contents_sha256 = 90897bbbfde4f07a376ad954838cbf1ac9bf04806dc828869a1132b67c
 # https://github.com/SeedSigner/seedsigner/pull/995
 [pr-995]
 repo   = https://github.com/SeedSigner/seedsigner.git
-commit = 50c977a3ab8309136e133538b85f744b9cfd6661
+commit = 274116675166354eacb84940d499846c83ff5cec
 pr     = 995
 title  = [security] Verify PSBT input amounts before displaying the fee
 deps   = dev
 
-zip_sha256          = 31b37931b9044d5e875667d227915f674363a1d67804428b5cce99f5b9556e96
-zip_contents_sha256 = 93cdde07a6a568f392df4a839bb90103ad985245cbb6da82d67055f3652d03da
+zip_sha256          = a8eeaddce83cb0162191608bab18858a220698fd14884c697bfe7432af702862
+zip_contents_sha256 = 7cfea18f4b1e178ad552f50448cf4d49fbceb70a1a9d16e52205bfe69383f498
 
 # Pull request #1042, proposed to SeedSigner and not yet merged.
 # https://github.com/SeedSigner/seedsigner/pull/1042
