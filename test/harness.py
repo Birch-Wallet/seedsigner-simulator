@@ -31,11 +31,12 @@ BASE_URL = os.environ.get("SIM_URL", f"http://127.0.0.1:{PORT}").rstrip("/")
 # an input to anything else, so it can be deleted at any time.
 ARTIFACT_DIR = os.environ.get("SIM_ARTIFACT_DIR", os.path.join(REPO, "test", "artifacts"))
 
-# The firmware the page runs, built by build/build-firmware-zip.sh: stock, the
-# release, unless SIM_FIRMWARE names another section of UPSTREAM -- dev, the
-# development-branch pin, or pr-<N>, a pinned pull request. Every test runs
-# against whichever it is, through sim_url() below.
-FIRMWARE = os.environ.get("SIM_FIRMWARE") or "stock"
+# The firmware the page runs, built by build/build-firmware-zip.sh: dev, the
+# development-branch pin and the page's default, unless SIM_FIRMWARE names
+# another section of UPSTREAM -- stock, the release, or pr-<N>, a pinned pull
+# request. Every test runs against whichever it is, through sim_url() below.
+DEFAULT_FIRMWARE = "dev"
+FIRMWARE = os.environ.get("SIM_FIRMWARE") or DEFAULT_FIRMWARE
 if not re.fullmatch(r"stock|dev|pr-[0-9]{1,6}", FIRMWARE):
     raise SystemExit(f"SIM_FIRMWARE={FIRMWARE!r} is not a firmware name (stock, dev, pr-<N>)")
 FIRMWARE_ZIP = f"seedsigner-{FIRMWARE}.zip"
@@ -79,7 +80,7 @@ def sim_url(page="index.html", **params):
     """A URL for the simulator, with tracing on: ?debug=1 is what puts the
     firmware's narration on the console, which is what these tests read."""
     params.setdefault("debug", "1")
-    if FIRMWARE != "stock":
+    if FIRMWARE != DEFAULT_FIRMWARE:
         params.setdefault("firmware", FIRMWARE)
     return f"{BASE_URL}/{page}?{urlencode(params)}"
 

@@ -35,11 +35,11 @@ A subset, by substring on the step name -- the names are `leak_scan`, `worker_cs
     python3 test/run.py scan          # everything with "scan" in the name
     python3 test/run.py leak          # just the leak scanner
 
-The whole suite runs against the release unless told otherwise; any other
-firmware `UPSTREAM` pins gets the same suite with
+The whole suite runs against the development branch, the page's default, unless
+told otherwise; any other firmware `UPSTREAM` pins gets the same suite with
 
-    SIM_FIRMWARE=dev python3 test/run.py
-    SIM_FIRMWARE=pr-995 python3 test/run.py build_info firmware_choice settings scan_seedqr mainnet
+    SIM_FIRMWARE=stock python3 test/run.py
+    SIM_FIRMWARE=pr-<N> python3 test/run.py build_info firmware_choice settings scan_seedqr mainnet
 
 CI runs every section: the full suite for stock and dev, and for each pinned pull
 request a smoke run that is allowed to fail, since a pull request breaking here
@@ -63,7 +63,7 @@ they are large and regenerate in seconds; set `SIM_KEEP_VIDEOS=1` to keep them.
 | `SIM_URL` | `http://127.0.0.1:$SIM_PORT` | where the tests look for the simulator |
 | `SIM_ARTIFACT_DIR` | `test/artifacts` | screenshots and videos |
 | `SIM_ASSETS` | `build/out`, `src/web` | where the firmware zips and the Pyodide runtime are |
-| `SIM_FIRMWARE` | `stock` | which firmware the suite runs: `stock`, the release; `dev`, the development-branch pin; or `pr-<N>`, a pinned pull request. Anything but stock adds `?firmware=<name>` to every page the tests open |
+| `SIM_FIRMWARE` | `dev` | which firmware the suite runs: `dev`, the development-branch pin; `stock`, the release; or `pr-<N>`, a pinned pull request. Anything but dev adds `?firmware=<name>` to every page the tests open |
 | `QR_KIND` | `qr` | which QR `test_scan.py` holds up: `qr` or `qr-compact` |
 | `SCAN_DECODER` | `zxing-wasm` | which decoder `test_scan.py` requires the page to pick: `zxing-wasm`, or `jsQR`, for which every request for zxing-wasm is refused and `BarcodeDetector` removed |
 
@@ -134,11 +134,12 @@ altered file's own hash. `build/out` is never touched, so there is nothing to pu
 back if this fails halfway.
 
 **`test_firmware_choice.py`**: the firmwares on offer and the page's choice
-between them. A plain URL runs the release, from `seedsigner-stock.zip`; the
+between them. A plain URL runs the development branch, from `seedsigner-dev.zip`; the
 device panel lists exactly what `firmwares.json` does, in its order and under its
 groups, the release by its tag, dev by branch and short commit, each pull request
 by number and title; the filter keeps the release and dev and narrows the pull
-requests. Choosing dev asks first, reloads with `?firmware=dev`, fetches
+requests. `?firmware=stock` runs the release, from `seedsigner-stock.zip`.
+Choosing dev from there asks first, reloads without `?firmware`, fetches
 `seedsigner-dev.zip` and boots it, and its version helper, handed the checkout's
 `.git` files, names its branch, commit and commit date on its own Version screen.
 The first pinned pull request, if there is one, is switched to the same way, and
@@ -358,8 +359,8 @@ different QR looks like from the firmware's side.
   anywhere first.
 - `make_qr_y4m.py`: writes the `.y4m` videos Chromium's fake camera plays,
   using the firmware's own vendored `qrcode` and embit's BIP39 wordlist out of
-  the firmware zip under test (`seedsigner-stock.zip`, or `seedsigner-dev.zip`
-  with `SIM_FIRMWARE=dev`), so the QR under test is drawn by the library SeedSigner
+  the firmware zip under test (`seedsigner-dev.zip`, or `seedsigner-stock.zip`
+  with `SIM_FIRMWARE=stock`), so the QR under test is drawn by the library SeedSigner
   draws one with. The seed is the standard BIP39 test vector "army van defense
   …". Nothing about it is secret and nothing should ever hold value.
 - `run.py`: the runner described above.

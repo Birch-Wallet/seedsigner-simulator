@@ -1,8 +1,8 @@
 # Architecture
 
 How real SeedSigner device firmware ends up running in a browser tab, and why the
-code looks the way it does. The firmware is stock SeedSigner 0.8.7 by default,
-or, if chosen, one pinned commit of SeedSigner's development branch.
+code looks the way it does. The firmware is one pinned commit of SeedSigner's
+development branch by default, or, if chosen, stock SeedSigner 0.8.7.
 
 The short version: the firmware's own Python runs under Pyodide in a Web Worker,
 its files unmodified, and three hardware seams are replaced at runtime from outside
@@ -57,14 +57,14 @@ into Pyodide's in-memory filesystem at `/firmware`, which becomes the working
 directory.
 
 There is one firmware per section of `UPSTREAM`, each its own zip built the same
-way: `seedsigner-stock.zip`, the release and the default; `seedsigner-dev.zip`,
-one commit of the development branch, which `build/bump-dev.sh` moves on
-purpose; and `seedsigner-pr-<N>.zip`, the pinned head of a SeedSigner pull
+way: `seedsigner-dev.zip`, one commit of the development branch and the
+default, which `build/bump-dev.sh` moves on purpose; `seedsigner-stock.zip`, the
+release; and `seedsigner-pr-<N>.zip`, the pinned head of a SeedSigner pull
 request, which `build/pr.sh` adds, moves and removes. Every build also rewrites
 `firmwares.json`, the list of what has been built, and that is what the device
 panel offers: grouped into release, development branch and unreviewed pull
 requests, scrolling, with a filter once it is long. The page picks one from
-`?firmware=` (a name of any other shape is the release) and switching is a
+`?firmware=` (absent, or a name of any other shape, is the development branch) and switching is a
 reload, like switching device. The worker is told which in its one `init`
 message and fetches that zip; nothing else about the boot differs. A pull
 request's build puts its own half of the warning above the device for as long as

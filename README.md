@@ -4,17 +4,18 @@ Real [SeedSigner](https://seedsigner.com) firmware, the actual Python off the
 device, running in a browser tab. The screen is a canvas, the buttons are your
 keyboard, the camera is your webcam.
 
-It runs stock SeedSigner **0.8.7**, exactly as the SeedSigner project publishes
-it, and nothing else. Or, if you choose it, one pinned commit of SeedSigner's
-**development branch**: what the project has merged since that release.
+By default it runs one pinned commit of SeedSigner's **development branch**:
+what the project has merged since its last release, as its developers are
+testing it. Or, if you choose it, stock SeedSigner **0.8.7**, exactly as the
+SeedSigner project publishes it.
 
 Forked from [bitsagarob/seedsigner-simulator](https://github.com/bitsagarob/seedsigner-simulator),
 cut down to stock SeedSigner alone, and extended:
 
-- **Several firmwares.** The 0.8.7 release by default; the development branch
-  pinned at one commit (`dev-cfaf443`, `?firmware=dev`); and pinned SeedSigner
-  pull requests for testing (`?firmware=pr-995`), each clearly marked as
-  unreviewed. Chosen from the device panel. Each is its own reproducible zip with
+- **Several firmwares.** The development branch by default, pinned at one
+  commit (`dev-ada81cd`); the 0.8.7 release (`?firmware=stock`); and, when any
+  are pinned, SeedSigner pull requests for testing (`?firmware=pr-<N>`), each
+  clearly marked as unreviewed. Chosen from the device panel. Each is its own reproducible zip with
   published hashes.
 - **Two devices.** The SeedSigner Plus at 320×240, or the original Waveshare
   1.3" hat at 240×240, switchable from the page.
@@ -85,8 +86,8 @@ involving money belongs on hardware.
 git clone https://github.com/newtonick/seedsigner-simulator.git
 cd seedsigner-simulator
 ./build/fetch-assets.sh          # Pyodide and zxing-wasm, pinned and hash-checked (~27 MB, once)
-./build/build-firmware-zip.sh      # seedsigner-stock.zip, from the pinned release
-./build/build-firmware-zip.sh dev  # seedsigner-dev.zip, from the pinned dev commit (optional)
+./build/build-firmware-zip.sh dev  # seedsigner-dev.zip, from the pinned dev commit (the default)
+./build/build-firmware-zip.sh      # seedsigner-stock.zip, from the pinned release (?firmware=stock)
 python3 test/serve.py --port 8770 src/web src/shims build/out
 ```
 
@@ -115,10 +116,10 @@ SeedSigner pull requests are pinned the same way, one section each, to try a
 proposed change before it is merged:
 
 ```sh
-./build/pr.sh add 995          # pin PR 995's head, build it twice, publish its hashes
+./build/pr.sh add <N>          # pin PR <N>'s head, build it twice, publish its hashes
 ./build/pr.sh list             # what is pinned, against each PR's current state
 ./build/pr.sh update --all     # move each to its current head
-./build/pr.sh remove 995       # drop it once it is merged or closed
+./build/pr.sh remove <N>       # drop it once it is merged or closed
 ```
 
 A pull request is somebody's unreviewed code, and the page says so while one
@@ -139,7 +140,7 @@ needs editing too.
 
 ## What you can verify
 
-- **It is the firmware, not a re-creation.** `seedsigner-stock.zip` (and `seedsigner-dev.zip`) holds SeedSigner's
+- **It is the firmware, not a re-creation.** `seedsigner-dev.zip` (and `seedsigner-stock.zip`) holds SeedSigner's
   upstream Python tree and its own `Controller.start()` runs it. Menus, seed
   handling, PSBT parsing, QR encoders, translations: all theirs, the translations
   at the commit upstream's own tree pins for them.

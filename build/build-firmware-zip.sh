@@ -7,11 +7,11 @@
 #
 #   ./build/build-firmware-zip.sh              ->  build/out/seedsigner-stock.zip
 #   ./build/build-firmware-zip.sh dev          ->  build/out/seedsigner-dev.zip
-#   ./build/build-firmware-zip.sh pr-995       ->  build/out/seedsigner-pr-995.zip
+#   ./build/build-firmware-zip.sh pr-<N>       ->  build/out/seedsigner-pr-<N>.zip
 #
-# stock is a SeedSigner release, pinned by tag and commit, and the default. dev is
-# one commit on SeedSigner's development branch, moved on purpose by
-# build/bump-dev.sh. Each pr-<N> is the head of one SeedSigner pull request,
+# stock is a SeedSigner release, pinned by tag and commit, and this script's
+# default. dev is one commit on SeedSigner's development branch, moved on purpose
+# by build/bump-dev.sh, and the firmware the page runs by default. Each pr-<N> is the head of one SeedSigner pull request,
 # added, moved and removed by build/pr.sh.
 #
 # Every build also rewrites build/out/firmwares.json, the list of firmwares the

@@ -53,8 +53,8 @@ verified than committed.
 
 ```sh
 ./build/fetch-assets.sh          # Pyodide 0.26.4 -> src/web/pyodide-e24b45d3/, zxing-wasm 3.1.4 -> src/web/zxing-2416232a/, sha256-checked
-./build/build-firmware-zip.sh      # -> build/out/seedsigner-stock.zip and build/out/fonts-<hash>/, from the pinned release
-./build/build-firmware-zip.sh dev  # -> build/out/seedsigner-dev.zip, from the pinned dev commit; optional
+./build/build-firmware-zip.sh dev  # -> build/out/seedsigner-dev.zip and build/out/fonts-<hash>/, from the pinned dev commit; the default
+./build/build-firmware-zip.sh      # -> build/out/seedsigner-stock.zip, from the pinned release; ?firmware=stock
 ```
 
 Both scripts need `bash`, `git`, `curl`, `sha256sum` (or `shasum`) and a `python3`
@@ -162,11 +162,11 @@ chmod 755 "$dest"                   # the web server must be able to read it
 | `pyodide-e24b45d3/` | `fetch-assets.sh` | ~26 MB: the runtime plus the wheels for Pillow and pycryptodome |
 | `zxing-2416232a/` | `fetch-assets.sh` | ~1 MB: the QR decoder, in every browser. Without it the page still scans, with jsQR, but slower to lock on, and in a browser with no `BarcodeDetector` (Safari, every browser on an iPhone, Chrome on Windows and Linux) it can take many seconds. Same-origin for the same reasons as jsQR, and, like Pyodide, it wants `.wasm` served as `application/wasm` |
 | `browser_display.py`, `browser_camera.py`, `browser_threads.py` | `src/shims/` | fetched at boot and written into Pyodide's filesystem |
-| `seedsigner-stock.zip` | `build/out/` | the pinned `seedsigner` tree plus its pure-Python dependencies plus this repository's stand-in packages |
+| `seedsigner-dev.zip` | `build/out/` | the firmware a plain URL runs: the pinned development-branch `seedsigner` tree plus its pure-Python dependencies plus this repository's stand-in packages |
 | `fonts-<hash>/` | `build/out/` | the fonts Chinese, Japanese, Korean, Arabic and Thai need (~22 MB), fetched by the worker the first time the firmware draws one and checked against the sha256 the zip's `deferred-fonts.json` gives it. The name is a hash of what is in it, so cache it forever like Pyodide. Leave it out and those five languages fail to draw; every other language still works |
-| `seedsigner-dev.zip`, `seedsigner-pr-<N>.zip` and their build-infos | `build/out/` | the development-branch firmware and each pinned pull request, from their sections of `UPSTREAM`; optional, about 2 MB each. The page offers what `firmwares.json` lists |
+| `seedsigner-stock.zip`, `seedsigner-pr-<N>.zip` and their build-infos | `build/out/` | the release firmware (`?firmware=stock`) and each pinned pull request, from their sections of `UPSTREAM`; optional, about 2 MB each. The page offers what `firmwares.json` lists |
 | `firmwares.json` | `build/out/` | the list of firmwares the device panel offers, written by every build from the build-infos beside it. Without it the panel offers only the firmware running |
-| `seedsigner-stock.build-info.json` | `build/out/` | what the build is: pin, tag, published hashes, dependency versions. The page's **i** panel is filled from it, and says it cannot describe the build if it is missing |
+| `seedsigner-dev.build-info.json` | `build/out/` | what the build is: pin, branch, published hashes, dependency versions. The page's **i** panel is filled from it, and says it cannot describe the build if it is missing |
 
 The shims sit next to the page rather than inside the firmware zip deliberately: it
 keeps the zip exactly what the build script produced, with the seams visibly
@@ -307,7 +307,7 @@ SIM_URL=https://sim.example.org python3 test/run.py
 | "this page is not a secure context…" | plain `http` to an address other than localhost: use https, or localhost |
 | "this page needs cross-origin isolation…" | COOP/COEP missing, or dropped by a proxy or a nested `location` |
 | Stuck on "loading python…" | `pyodide/` is incomplete or 404ing; check the network tab |
-| Stuck on "unpacking firmware…" | `seedsigner-stock.zip` (or, with `?firmware=dev`, `seedsigner-dev.zip`) missing or truncated |
+| Stuck on "unpacking firmware…" | `seedsigner-dev.zip` (or, with `?firmware=stock`, `seedsigner-stock.zip`) missing or truncated |
 | SeedSigner draws, but scanning says "no camera API here" | not a secure context: use https or localhost |
 | Camera permission prompt never appears | the firmware only opens the camera when you enter a scan screen; that is intended |
 | Old firmware, new page, weird errors | a stale service-worker cache; bump `VERSION` in `sw.js` and reload |
