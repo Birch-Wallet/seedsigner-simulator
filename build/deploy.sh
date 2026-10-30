@@ -23,9 +23,10 @@
 #   2. ./build/fetch-assets.sh, then ./build/build-firmware-zip.sh for every
 #      section of UPSTREAM, each zip required to hash to its published sha256.
 #   3. The site, assembled in a temporary directory: src/web, src/shims, every
-#      zip with its build-info, firmwares.json, and the fonts they name. The
-#      directory is made 755 first, because rsync copies its mode onto DEST and
-#      mktemp makes it 700, which leaves the web server unable to read anything.
+#      zip with its build-info, a firmwares.json written from those build-infos
+#      alone, and the fonts they name. The directory is made 755 first, because
+#      rsync copies its mode onto DEST and mktemp makes it 700, which leaves the
+#      web server unable to read anything.
 #   4. The current DEST kept as DEST.previous (hard links, so it costs almost
 #      nothing), then the new site synced into DEST. The command to put the
 #      previous one back is printed.
@@ -42,7 +43,7 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 UPSTREAM_FILE="${REPO_ROOT}/UPSTREAM"
 OUT_DIR="${REPO_ROOT}/build/out"
 
-usage() { sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,37p' "$0" | sed 's/^# \{0,1\}//'; }
 
 die() {
     echo "deploy: $*" >&2
@@ -136,7 +137,10 @@ cp "${REPO_ROOT}"/src/shims/*.py "${SITE}/"
 for firmware in ${FIRMWARES}; do
     cp "${OUT_DIR}/seedsigner-${firmware}.zip" "${OUT_DIR}/seedsigner-${firmware}.build-info.json" "${SITE}/"
 done
-cp "${OUT_DIR}/firmwares.json" "${SITE}/"
+# Written from the build-infos just copied, not taken from build/out: that one
+# lists every build-info left there, including those of firmwares UPSTREAM no
+# longer pins (a removed pull request), whose zips are not deployed.
+python3 "${REPO_ROOT}/build/firmware-index.py" "${SITE}"
 # The font directories the deployed build-infos name, and no others.
 for fonts in $(python3 - "${SITE}" <<'PY'
 import glob, json, os, sys
