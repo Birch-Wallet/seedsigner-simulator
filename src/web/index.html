@@ -560,20 +560,20 @@
 
         <div id="build">
           <h3>What is running</h3>
-          <p id="firmware-line">Running stock SeedSigner, the firmware a plain
-          SeedSigner runs.</p>
+          <p id="firmware-line">Running SeedSigner's development branch, at one
+          pinned commit. Not a release.</p>
           <dl>
             <dt>Firmware</dt><dd id="build-firmware">…</dd>
             <dt>Upstream</dt><dd><a id="build-repo" rel="noopener"></a></dd>
-            <dt id="build-tag-label">Tag</dt><dd><a id="build-tag" rel="noopener"></a></dd>
+            <dt id="build-tag-label">Branch</dt><dd><a id="build-tag" rel="noopener"></a></dd>
             <dt>Commit</dt><dd><a id="build-commit" class="hash" rel="noopener"></a></dd>
             <dt>Interpreter</dt><dd>Pyodide <span id="build-pyodide"></span>, CPython compiled to WebAssembly</dd>
             <dt>Translations</dt><dd><a id="build-translations" class="hash" rel="noopener"></a>
               <span id="build-languages"></span></dd>
           </dl>
-          <p id="pin-line">The firmware is pinned to a published SeedSigner release, by tag and
-          by commit, rather than to a branch. A branch moves and can be rewritten
-          out from under a rebuild; a published tag cannot.</p>
+          <p id="pin-line">This firmware is pinned to one commit of the development
+          branch, not to the branch itself, so it is rebuilt and checked like a
+          release. It moves only when this site moves it on purpose.</p>
 
           <h3>The firmware zip this page loaded, <span id="build-zip"></span></h3>
           <dl>
@@ -585,9 +585,9 @@
         </div>
 
         <p><strong>Two firmwares, two devices.</strong> The device button under
-        the simulator picks the firmware: the SeedSigner release, or one pinned
-        commit of its development branch, which is not a release and is labelled
-        with that commit. It also picks the hardware: the SeedSigner Plus with its
+        the simulator picks the firmware: by default one pinned commit of
+        SeedSigner's development branch, which is not a release and is labelled
+        with that commit, or the SeedSigner release. It also picks the hardware: the SeedSigner Plus with its
         320&times;240 screen, or the original build on a Waveshare 1.3" hat at
         240&times;240. Switching either starts the firmware again.</p>
 
@@ -731,15 +731,15 @@ function writeSavedSettings(text) {
     else localStorage.removeItem(SETTINGS_KEY);
   } catch (e) { /* no storage here: the settings last as long as the page */ }
 }
-// Which firmware: stock is a SeedSigner release and the default, so a plain link
-// means what it always meant; ?firmware=dev is one commit of SeedSigner's
-// development branch, and ?firmware=pr-<N> the pinned head of pull request <N>.
-// Each is its own zip, pinned in its own section of UPSTREAM; what is on offer
-// is listed in firmwares.json. A name of any other shape is the release.
+// Which firmware: dev is one commit of SeedSigner's development branch and the
+// default, so a plain link runs it; ?firmware=stock is the SeedSigner release,
+// and ?firmware=pr-<N> the pinned head of pull request <N>. Each is its own zip,
+// pinned in its own section of UPSTREAM; what is on offer is listed in
+// firmwares.json. A name of any other shape is the development branch.
 const FIRMWARE_NAME = /^(stock|dev|pr-[0-9]{1,6})$/;
 const FIRMWARE = (() => {
   const asked = new URLSearchParams(location.search).get("firmware") || "";
-  return FIRMWARE_NAME.test(asked) ? asked : "stock";
+  return FIRMWARE_NAME.test(asked) ? asked : "dev";
 })();
 
 // Which hardware: the SeedSigner Plus's 320x240, or the original Waveshare hat's
@@ -894,8 +894,12 @@ function fillPanel(info) {
       + "to SeedSigner and not yet reviewed, not a release.");
     document.body.classList.add("pr-build");
   } else if (release) {
+    panelText("build-tag-label", "Tag");
     panelLink("build-tag", info.upstream.tag,
               web + "/releases/tag/" + encodeURIComponent(info.upstream.tag));
+    panelText("pin-line", "The firmware is pinned to a published SeedSigner release, "
+      + "by tag and by commit, rather than to a branch. A branch moves and can be "
+      + "rewritten out from under a rebuild; a published tag cannot.");
   } else {
     panelText("build-tag-label", "Branch");
     panelLink("build-tag", info.upstream.branch,
@@ -1378,8 +1382,8 @@ document.getElementById("device-cancel").addEventListener("click", (event) => {
 document.getElementById("device-switch").addEventListener("click", () => {
   const url = new URL(location.href);
   url.searchParams.set("display", wanted.display);
-  // Absent means stock, so a link to the release stays as plain as it always was.
-  if (wanted.firmware === "stock") url.searchParams.delete("firmware");
+  // Absent means dev, the default, so a link to it stays plain.
+  if (wanted.firmware === "dev") url.searchParams.delete("firmware");
   else url.searchParams.set("firmware", wanted.firmware);
   location.assign(url);
 });

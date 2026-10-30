@@ -51,32 +51,8 @@ zip_contents_sha256 = e29d79f62c51a30a5e6477646e198f22f9718bd420ccabd9d1dbecdf02
 # branch's current tip, with the hashes below rebuilt, by build/bump-dev.sh.
 [dev]
 repo   = https://github.com/SeedSigner/seedsigner.git
-commit = cfaf443a5f19e3a3e2b2c7be7572ae3924142c0e
+commit = ada81cde050e46c19cb6e3fa73872b73955a138c
 branch = dev
 
-zip_sha256          = b05c203a83064ee0ee36fc8e57d5ed24fb2b19e0164f81a158005422074e2e38
-zip_contents_sha256 = 90897bbbfde4f07a376ad954838cbf1ac9bf04806dc828869a1132b67c7beeac
-
-# Pull request #995, proposed to SeedSigner and not yet merged.
-# https://github.com/SeedSigner/seedsigner/pull/995
-[pr-995]
-repo   = https://github.com/SeedSigner/seedsigner.git
-commit = 274116675166354eacb84940d499846c83ff5cec
-pr     = 995
-title  = [security] Verify PSBT input amounts before displaying the fee
-deps   = dev
-
-zip_sha256          = a8eeaddce83cb0162191608bab18858a220698fd14884c697bfe7432af702862
-zip_contents_sha256 = 7cfea18f4b1e178ad552f50448cf4d49fbceb70a1a9d16e52205bfe69383f498
-
-# Pull request #1042, proposed to SeedSigner and not yet merged.
-# https://github.com/SeedSigner/seedsigner/pull/1042
-[pr-1042]
-repo   = https://github.com/SeedSigner/seedsigner.git
-commit = 38db4a4e0d8173a56fae724b952e6bca449cd3ea
-pr     = 1042
-title  = Parse the OP_RETURN push opcode instead of assuming OP_PUSHDATA1
-deps   = dev
-
-zip_sha256          = 64f7a04561c7d36ff9acc41d717dee5979111502f0993f4bc89dce2c81c1bcf4
-zip_contents_sha256 = 9150e15c0e5fc8018def68278a3b08e2c138ee8235e2078147bd1f8dc5fc921c
+zip_sha256          = 7c0e97fe8578739d0d63478f482b7807096b92aa9dfaefb9f99868f6c2d8fefd
+zip_contents_sha256 = fa54e7e32f8e3f0df28762c6af701b5818c521d16710324a42c979872557e3c6

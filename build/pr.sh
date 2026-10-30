@@ -2,10 +2,10 @@
 #
 # Pin SeedSigner pull requests as firmwares the simulator offers.
 #
-#   ./build/pr.sh add 995          pin PR 995's head as [pr-995], build it, publish
-#   ./build/pr.sh update 995       move [pr-995] to the PR's current head
+#   ./build/pr.sh add <N>          pin PR <N>'s head as [pr-<N>], build it, publish
+#   ./build/pr.sh update <N>       move [pr-<N>] to the PR's current head
 #   ./build/pr.sh update --all     the same, for every pinned PR
-#   ./build/pr.sh remove 995       drop [pr-995] and its build outputs
+#   ./build/pr.sh remove <N>       drop [pr-<N>] and its build outputs
 #   ./build/pr.sh list             every pinned PR against its current state
 #
 # A pull request is somebody's proposed change to SeedSigner, not reviewed and

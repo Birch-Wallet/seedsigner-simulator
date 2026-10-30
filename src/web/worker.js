@@ -23,11 +23,11 @@ let bitcoinNetwork = "T";
 // previous visit, if Persistent Settings was on (see index.html).
 let networkExplicit = false;
 let savedSettings = "";
-// Which firmware zip: "stock", a release; "dev", one commit of the development
-// branch; or "pr-<N>", the pinned head of a pull request. A name of any other
-// shape is stock, the same rule the page applies.
+// Which firmware zip: "dev", one commit of the development branch and the
+// default; "stock", a release; or "pr-<N>", the pinned head of a pull request.
+// A name of any other shape is dev, the same rule the page applies.
 const FIRMWARE_NAME = /^(stock|dev|pr-[0-9]{1,6})$/;
-let firmware = "stock";
+let firmware = "dev";
 
 const STATE = 0;
 const KEYCODE = 1;
@@ -51,7 +51,7 @@ self.onmessage = async (event) => {
     if (event.data.bitcoinNetwork) bitcoinNetwork = event.data.bitcoinNetwork;
     networkExplicit = !!event.data.networkExplicit;
     savedSettings = typeof event.data.savedSettings === "string" ? event.data.savedSettings : "";
-    firmware = FIRMWARE_NAME.test(event.data.firmware || "") ? event.data.firmware : "stock";
+    firmware = FIRMWARE_NAME.test(event.data.firmware || "") ? event.data.firmware : "dev";
     try {
       await boot(event.data.width, event.data.height);
     } catch (error) {

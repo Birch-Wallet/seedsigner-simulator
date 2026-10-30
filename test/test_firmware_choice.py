@@ -1,8 +1,8 @@
 """
 The firmwares on offer, and the page's choice between them.
 
-stock is a SeedSigner release and the default; dev is one commit of SeedSigner's
-development branch; each pr-<N> is the pinned head of one SeedSigner pull
+dev is one commit of SeedSigner's development branch and the default; stock is
+a SeedSigner release; each pr-<N> is the pinned head of one SeedSigner pull
 request. Each is its own zip, pinned in its own section of UPSTREAM, and the
 page offers what firmwares.json lists: grouped, labelled from the index, with a
 filter once the list is long. Switching is a reload with ?firmware, the way
@@ -10,15 +10,16 @@ switching device is a reload with ?display.
 
 What is checked:
 
-  - a plain URL runs the release: the page fetches seedsigner-stock.zip, and the
-    panel marks it as the one running;
+  - a plain URL runs the development branch: the page fetches
+    seedsigner-dev.zip, and the panel marks it as the one running;
   - the panel lists every firmware the index names, under its group, the
     release by its tag, dev by branch and short commit, a pull request by its
     number and title;
   - the filter keeps the release and dev and narrows the pull requests;
-  - choosing dev asks first, reloads with ?firmware=dev, boots it from its own
-    zip, and dev names its branch, commit and commit date on its own Version
-    screen;
+  - ?firmware=stock runs the release, marked as running and labelled by tag;
+  - choosing dev from there asks first, reloads without ?firmware, boots it
+    from its own zip, and dev names its branch, commit and commit date on its
+    own Version screen;
   - choosing a pull request, when one is built, boots it from its zip, names
     it on the Version screen, and puts the pull request's half of the warning up.
 
@@ -81,7 +82,12 @@ def switch_to(page, name):
     page.locator(f'#firmware-list .pick[data-firmware="{name}"]').click()
     asked = page.locator("#device-confirm").is_visible()
     page.locator("#device-switch").click()
-    page.wait_for_url(f"**firmware={name}**")
+    # The default is a plain URL, so a switch to it is a reload that drops
+    # ?firmware rather than one that names it.
+    if name == harness.DEFAULT_FIRMWARE:
+        page.wait_for_url(lambda url: "firmware=" not in url)
+    else:
+        page.wait_for_url(f"**firmware={name}**")
     return asked
 
 
@@ -132,11 +138,12 @@ def main() -> int:
         errors = []
         page.on("pageerror", lambda e: errors.append(str(e)))
 
-        # --- a plain URL is the release --------------------------------------
+        # --- a plain URL is the development branch ---------------------------
         log = harness.Log(page)
-        page.goto(harness.sim_url(firmware="stock"))
-        log.wait("MainMenuScreen", 240, "the release to boot")
-        check("a plain URL runs the release", zips == {"seedsigner-stock.zip"}, str(zips))
+        page.goto(f"{harness.BASE_URL}/index.html?debug=1")
+        log.wait("MainMenuScreen", 240, "the default to boot")
+        check("a plain URL runs the development branch",
+              zips == {"seedsigner-dev.zip"}, str(zips))
 
         # --- the list is the index -------------------------------------------
         open_panel(page)
@@ -148,12 +155,12 @@ def main() -> int:
                                              "hs => hs.map(h => h.textContent)")
         check("under their groups",
               headings == list(dict.fromkeys(GROUPS[e["kind"]] for e in index)), str(headings))
-        stock_pick = page.locator('#firmware-list .pick[data-firmware="stock"]')
-        check("the release is marked as the one running",
-              stock_pick.get_attribute("aria-current") == "true")
-        check("and labelled by its tag",
-              upstream_field("stock", "tag") in stock_pick.inner_text(), stock_pick.inner_text())
         dev_pick = page.locator('#firmware-list .pick[data-firmware="dev"]')
+        check("dev is marked as the one running",
+              dev_pick.get_attribute("aria-current") == "true")
+        stock_pick = page.locator('#firmware-list .pick[data-firmware="stock"]')
+        check("the release is labelled by its tag",
+              upstream_field("stock", "tag") in stock_pick.inner_text(), stock_pick.inner_text())
         check("dev is labelled by branch and commit",
               "dev-" + upstream_field("dev", "commit")[:7] in dev_pick.inner_text(),
               dev_pick.inner_text())
@@ -181,7 +188,16 @@ def main() -> int:
         check("the filter box appears only once the list is long",
               page.locator("#firmware-filter").is_hidden() == (len(index) <= 8))
 
-        # --- dev --------------------------------------------------------------
+        # --- the release, then back to dev ------------------------------------
+        zips.clear()
+        log = harness.Log(page)
+        page.goto(harness.sim_url(firmware="stock"))
+        log.wait("MainMenuScreen", 240, "the release to boot")
+        check("?firmware=stock runs the release", zips == {"seedsigner-stock.zip"}, str(zips))
+        open_panel(page)
+        check("and marks it as the one running",
+              page.locator('#firmware-list .pick[data-firmware="stock"]')
+                  .get_attribute("aria-current") == "true")
         zips.clear()
         check("choosing another firmware asks before restarting it", switch_to(page, "dev"))
         boots_as(page, "dev", zips)
