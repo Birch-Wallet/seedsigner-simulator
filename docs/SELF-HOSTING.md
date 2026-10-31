@@ -215,7 +215,8 @@ server {
 
     # Pyodide, zxing-wasm and the fonts sit in directories named by a hash of
     # what is in them, so a new version is a new URL: cache them for good.
-    location ~ ^/(pyodide|zxing|fonts)-[0-9a-f]{8}/ {
+    # Quoted: unquoted, nginx reads the { in {8} as the start of a block.
+    location ~ "^/(pyodide|zxing|fonts)-[0-9a-f]{8}/" {
         add_header Cache-Control "public, max-age=31536000, immutable" always;
         add_header Cross-Origin-Opener-Policy   same-origin  always;
         add_header Cross-Origin-Embedder-Policy require-corp always;
@@ -271,9 +272,9 @@ sim.example.org {
     }
     # Asked about on every load, except the hash-named directories, which never
     # change and are kept for good (see the nginx notes).
-    @hashed path_regexp ^/(pyodide|zxing|fonts)-[0-9a-f]{8}/
+    @hashed path_regexp ^/(pyodide|zxing|fonts)-[0-9a-f]+/
     @fresh {
-        not path_regexp ^/(pyodide|zxing|fonts)-[0-9a-f]{8}/
+        not path_regexp ^/(pyodide|zxing|fonts)-[0-9a-f]+/
     }
     header @fresh Cache-Control "no-cache"
     header @hashed Cache-Control "public, max-age=31536000, immutable"
