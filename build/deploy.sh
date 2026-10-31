@@ -156,7 +156,12 @@ PY
     [ -d "${OUT_DIR}/${fonts}" ] || die "a build-info names ${fonts}/, which the build did not write"
     cp -R "${OUT_DIR}/${fonts}" "${SITE}/"
 done
-echo "    $(find "${SITE}" -type f | wc -l | tr -d ' ') files, $(du -sh "${SITE}" | cut -f1)"
+# The commit this deploy is. A page left open, or a Home Screen app resumed
+# days later, compares it with the one it started with and offers a reload when
+# they differ (see checkForUpdate in index.html).
+COMMIT="$(git -C "${REPO_ROOT}" rev-parse HEAD)"
+printf '{"commit": "%s"}\n' "${COMMIT}" > "${SITE}/deploy.json"
+echo "    $(find "${SITE}" -type f | wc -l | tr -d ' ') files, $(du -sh "${SITE}" | cut -f1), commit ${COMMIT}"
 
 # --- 4. publish ----------------------------------------------------------------------
 
@@ -187,6 +192,34 @@ case "${status}" in *" 200"*) ok "the page answers: ${status}" ;; *) fail "the p
 for header in cross-origin-opener-policy cross-origin-embedder-policy; do
     echo "${headers}" | grep -qi "^${header}:" && ok "${header}" || fail "no ${header} header on the page"
 done
+
+# How long a browser may keep each file without asking. The page, the scripts
+# and the zips have to be asked about every time, or a returning visitor and the
+# service worker under them are handed the previous deploy from the browser's
+# HTTP cache; the hash-named directories never change and can be kept for good.
+cache_control() { curl -sI "$1" | grep -i '^cache-control:' | tr -d '\r' | cut -d' ' -f2- || true; }
+for path in "" "worker.js" "deploy.json" "seedsigner-$(echo ${FIRMWARES} | cut -d' ' -f1).zip"; do
+    got="$(cache_control "${URL}/${path}")"
+    case "${got}" in
+        *no-cache*|*no-store*) ok "/${path} is revalidated on every load: ${got}" ;;
+        *) fail "/${path} sends Cache-Control '${got}', not no-cache, so a deploy can go unseen (see docs/SELF-HOSTING.md)" ;;
+    esac
+done
+for pattern in 'pyodide-*/pyodide.js' 'zxing-*/index.js' 'fonts-*/*'; do
+    asset="$(cd "${SITE}" && ls -d ${pattern} 2>/dev/null | head -1 || true)"
+    [ -n "${asset}" ] || continue
+    got="$(cache_control "${URL}/${asset}")"
+    case "${got}" in
+        *immutable*) ok "${asset%%/*}/ is cached for good: ${got}" ;;
+        *) fail "${asset%%/*}/ sends Cache-Control '${got}', not immutable (see docs/SELF-HOSTING.md)" ;;
+    esac
+done
+
+served="$(curl -sf "${URL}/deploy.json" || true)"
+case "${served}" in
+    *"\"${COMMIT}\""*) ok "deploy.json names ${COMMIT}" ;;
+    *) fail "deploy.json serves '${served}', not commit ${COMMIT}" ;;
+esac
 
 policy="$(curl -sI "${URL}/worker.js" | grep -i '^content-security-policy:' | tr -d '\r' || true)"
 case "${policy}" in

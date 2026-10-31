@@ -331,6 +331,9 @@
     display: flex; align-items: center; justify-content: center; gap: .6rem;
   }
   #controls:not(.rec-offered) .rec-only { display: none; }
+  /* Only once the site has been deployed again since this page started. */
+  #controls:not(.update-offered) .update-only { display: none; }
+  #ctl-update { color: #f7931a; border-color: #f7931a; }
   /* A panel open over a short screen can reach the title row, whose i button
      sits above the page (it has to be above the About panel it opens); while a
      panel is open, the bar that holds it goes above that. */
@@ -450,7 +453,7 @@
   /* Chosen, waiting on Switch: not running yet, so not current. */
   .pick[data-wanted=true] { border-color: #f7931a; border-style: dashed; }
   .pop-actions { display: flex; justify-content: flex-end; gap: .5rem; }
-  #device-switch { color: #f7931a; border-color: #f7931a; }
+  #device-switch, #update-reload { color: #f7931a; border-color: #f7931a; }
   .pop-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
   .pop-row > span:first-child { font-size: .88em; color: #9aa3ae; }
   .pick:focus-visible, .pop-actions button:focus-visible, .seg button:focus-visible {
@@ -695,6 +698,25 @@
       </svg>
       <span id="fullscreen-label" class="offscreen">Fill the screen</span>
     </button>
+    <div class="ctl-wrap update-only">
+      <button type="button" class="ctl" id="ctl-update" aria-expanded="false"
+              aria-controls="update-panel" aria-label="A new version is available"
+              title="A new version is available">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"></path>
+          <path d="M19.5 3.5v4h-4"></path>
+        </svg>
+      </button>
+      <div class="pop" id="update-panel" role="dialog" aria-label="Update" hidden>
+        <p class="pop-title">Update</p>
+        <p>A new version of this simulator is available. Reloading restarts the
+        firmware, and anything loaded in this session is lost.</p>
+        <div class="pop-actions">
+          <button type="button" id="update-later">Later</button>
+          <button type="button" id="update-reload">Reload</button>
+        </div>
+      </div>
+    </div>
     <p id="network"></p>
   </nav>
   <p id="camera-hint"></p>
@@ -706,9 +728,17 @@
 <script src="mp4-muxer.js"></script>
 <script src="recorder.js"></script>
 <script>
-if ("serviceWorker" in navigator) {
-  addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
-}
+// The service worker (sw.js) is what lets the page start again with no network,
+// and it keeps only what passes through it. Registered first thing, not on
+// load: the firmware's own downloads, Pyodide and the zip, begin as soon as the
+// worker is made, and a first visit used to make it before the service worker
+// was in control, so none of that was kept. A Home Screen app opened once then
+// started offline only if the browser's own HTTP cache still happened to hold it.
+// The boot at the bottom waits for it on a first visit (whenControlled).
+// Resolves to the registration, or to nothing where there is none to be had.
+const swRegistration = "serviceWorker" in navigator
+  ? navigator.serviceWorker.register("sw.js").catch(() => null)
+  : Promise.resolve(null);
 
 // ?debug=1 puts the firmware's narration on the console, which is what the tests read.
 const DEBUG = new URLSearchParams(location.search).has("debug");
@@ -1283,11 +1313,12 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") setSolo(false);
 });
 
-// The bar's two panels: one open at a time, closed by their button again, a
-// tap anywhere else, or Escape.
+// The bar's panels: one open at a time, closed by their button again, a tap
+// anywhere else, or Escape.
 const panels = [
   [document.getElementById("ctl-device"), document.getElementById("device-panel")],
   [document.getElementById("ctl-settings"), document.getElementById("settings-panel")],
+  [document.getElementById("ctl-update"), document.getElementById("update-panel")],
 ];
 function closePanels(except) {
   for (const [button, panel] of panels) {
@@ -1537,6 +1568,87 @@ function cameraSource() {
   });
 }
 
+// A deploy, noticed while the page is open. An app on a phone's Home Screen is
+// rarely loaded afresh: opening it resumes the page it already had, which can
+// be days and several deploys old, and there is no reload button to press. So
+// whenever the page comes back into view, or the network comes back, it asks
+// whether the site has moved on: the browser re-checks sw.js, and the page
+// reads deploy.json, the commit build/deploy.sh last published. A commit other
+// than the one this page started with lights a button in the bar. It never
+// reloads on its own, which would restart the firmware and lose whatever this
+// session had loaded. A copy served without deploy.json, as test/serve.py
+// serves a checkout, never offers one.
+let startedAs = null;
+function deployedCommit() {
+  return fetch("deploy.json", { cache: "no-store" })
+    .then((response) => (response.ok ? response.json() : null))
+    .then((deploy) => (deploy && typeof deploy.commit === "string" ? deploy.commit : null))
+    .catch(() => null);
+}
+function checkForUpdate() {
+  if (startedAs === null || document.visibilityState !== "visible") return;
+  swRegistration.then((registration) => registration && registration.update())
+    .catch(() => {});
+  deployedCommit().then((commit) => {
+    if (commit && commit !== startedAs) controls.classList.add("update-offered");
+  });
+}
+document.addEventListener("visibilitychange", checkForUpdate);
+addEventListener("online", checkForUpdate);
+document.getElementById("update-later").addEventListener("click", () => closePanels(null));
+document.getElementById("update-reload").addEventListener("click", () => location.reload());
+
+// What an installed app keeps for a day with no network. The device panel
+// offers every firmware firmwares.json lists, and only the one that booted has
+// been through the service worker, so once the firmware is drawing the others'
+// zips and build-infos are fetched through it too, to be kept. The app also
+// asks for its storage not to be cleared when the phone runs short, which is
+// the browser's to grant or not. A browser tab is spared both: it keeps what it
+// has used, not megabytes of firmware nobody there asked for.
+let keptForOffline = false;
+function keepForOffline() {
+  if (keptForOffline || !standalone) return;
+  keptForOffline = true;
+  if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persist().catch(() => {});
+  }
+  if (!navigator.serviceWorker || !navigator.serviceWorker.controller) return;
+  fetch("firmwares.json")
+    .then((response) => (response.ok ? response.json() : { firmwares: [] }))
+    .then(async (index) => {
+      for (const entry of index.firmwares || []) {
+        if (entry.name === FIRMWARE || !FIRMWARE_NAME.test(entry.name)) continue;
+        for (const name of ["seedsigner-" + entry.name + ".zip",
+                            "seedsigner-" + entry.name + ".build-info.json"]) {
+          const response = await fetch(name);
+          if (response.ok) await response.arrayBuffer();
+        }
+      }
+    })
+    .catch(() => {});
+}
+
+// On a first visit nothing controls the page yet, and the worker is started
+// only once the service worker has taken it over, so that everything the
+// firmware downloads goes through it and is kept. A page already controlled
+// starts at once, and so does one the service worker will not take over: a
+// shift-reload bypasses it on purpose, and a browser may refuse it altogether.
+// Never more than a few seconds either way: a service worker that is slow to
+// install, or fails to, costs the offline copy, not the boot.
+const CONTROL_WAIT_MS = 5000;
+function whenControlled() {
+  if (!navigator.serviceWorker || navigator.serviceWorker.controller) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    setTimeout(resolve, CONTROL_WAIT_MS);
+    navigator.serviceWorker.addEventListener("controllerchange", resolve, { once: true });
+    swRegistration.then((registration) => {
+      if (!registration || registration.active) resolve();
+    });
+  });
+}
+
 // Constructing the worker is what starts the Pyodide download and the boot.
 function startSimulator() {
   const worker = new Worker("worker.js");
@@ -1553,6 +1665,7 @@ function startSimulator() {
         statusEl.textContent = "";
         statusEl.className = "ready";
         offerRecording();
+        keepForOffline();
       }
     } else if (type === "log") {
       console.log("[py] " + event.data.message);
@@ -1562,6 +1675,7 @@ function startSimulator() {
       statusEl.textContent = "";
       statusEl.className = "ready";
       offerRecording();
+      keepForOffline();
     } else if (type === "zip-sha256") {
       receivedHash = event.data.sha256;
       showVerdict();
@@ -1620,7 +1734,12 @@ if (!ISOLATED) {
     event.preventDefault();
     sendKey(channel);
   });
-  startSimulator();
+  whenControlled().then(() => {
+    startSimulator();
+    // Read once the service worker is in control, so that it is kept, and
+    // the commit to compare later deploys against.
+    deployedCommit().then((commit) => { startedAs = commit; });
+  });
 }
 </script>
 </body>

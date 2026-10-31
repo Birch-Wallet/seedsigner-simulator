@@ -34,6 +34,7 @@ WORKER_CSP = ("default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-
 
 class IsolatedHandler(SimpleHTTPRequestHandler):
     roots = ()
+    cache_control = "no-store"
 
     # Python only learned .wasm in 3.11, and Pyodide starts with
     # WebAssembly.instantiateStreaming, which rejects anything that does not
@@ -65,8 +66,10 @@ class IsolatedHandler(SimpleHTTPRequestHandler):
         if os.path.basename(urllib.parse.urlsplit(self.path).path) == "worker.js":
             self.send_header("Content-Security-Policy", WORKER_CSP)
         # A test that passes against a cached copy of the file it is meant to be
-        # testing has proved nothing.
-        self.send_header("Cache-Control", "no-store")
+        # testing has proved nothing. test_offline.py turns this off, to be the
+        # server that forgot it.
+        if self.cache_control:
+            self.send_header("Cache-Control", self.cache_control)
         super().end_headers()
 
     def log_message(self, *args):
@@ -78,6 +81,9 @@ def main() -> int:
     parser.add_argument("roots", nargs="+", help="directories to overlay, first match wins")
     parser.add_argument("--port", type=int, default=int(os.environ.get("SIM_PORT", "8770")))
     parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--cache-control", default="no-store",
+                        help="Cache-Control on every response; empty sends none, leaving "
+                             "Last-Modified alone, as a server that was never told to does")
     args = parser.parse_args()
 
     roots = [os.path.abspath(r) for r in args.roots]
@@ -87,6 +93,7 @@ def main() -> int:
             return 2
 
     IsolatedHandler.roots = tuple(roots)
+    IsolatedHandler.cache_control = args.cache_control
     print(f"serving on http://{args.host}:{args.port}", flush=True)
     for root in roots:
         print(f"  {root}", flush=True)

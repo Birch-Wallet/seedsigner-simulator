@@ -45,6 +45,8 @@ SUITE = [
     ("firmware_choice", ["test_firmware_choice.py"], True),
     ("settings", ["test_settings.py"], True),
     ("persistent_settings", ["test_persistent_settings.py"], True),
+    # Its own server, which it switches off to be offline.
+    ("offline", ["test_offline.py"], False),
     ("languages", ["test_languages.py"], True),
     ("scan_seedqr", ["test_scan.py"], True),
     ("scan_compact", ["test_scan.py"], True),
