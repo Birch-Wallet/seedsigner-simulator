@@ -10,7 +10,8 @@
  *     immutable: each sits in a directory named by a hash of what is in it.
  *     Cache-first, fetched once and kept until VERSION changes.
  *   - The pages and our own scripts change every deploy. Network-first, so a
- *     deploy is visible on the next load rather than whenever the cache expires.
+ *     deploy is visible on the next load rather than whenever the cache expires,
+ *     and the network means the server, never the browser's HTTP cache.
  *
  * Nothing cross-origin and nothing but GET is touched. Same-origin cached
  * responses keep their headers, so COOP/COEP survive and the page stays
@@ -87,6 +88,12 @@ self.addEventListener("activate", (event) => {
       }
       await caches.delete(name);
     }
+    // A page used to be kept once for every query string it was opened with;
+    // now it is kept once, under its bare path (see fetch below), and those
+    // entries would never be read again.
+    for (const req of await mine.keys()) {
+      if (new URL(req.url).search) await mine.delete(req);
+    }
     await self.clients.claim();
   })());
 });
@@ -108,13 +115,31 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Asked of the server every time. A plain fetch() goes through the browser's
+  // HTTP cache, and a response sent without Cache-Control counts as fresh there
+  // for about a tenth of its age, so a page fetched a week after a deploy could
+  // hide the next deploy for most of a day without the server being asked at
+  // all. no-cache makes every request a conditional one: an unchanged file is a
+  // 304.
+  //
+  // A page is fetched by its URL rather than by the navigation's own request:
+  // given that request, Chromium never reached the server despite no-cache. The
+  // redirect mode stays a navigation's, so a redirect goes back to the browser
+  // to follow. And a page is kept once, under its bare path. The query string is
+  // for the page to read, and the bytes are the same whatever it says, so
+  // ?display=240x240 or ?firmware=stock still opens offline when that exact URL
+  // was never opened online: switching either reloads with the new query.
+  const page = req.mode === "navigate";
+  const key = page ? url.origin + url.pathname : req;
   event.respondWith((async () => {
     try {
-      const res = await fetch(req);
-      if (res.ok) (await caches.open(CACHE)).put(req, res.clone());
+      const res = page
+        ? await fetch(req.url, { cache: "no-cache", redirect: "manual" })
+        : await fetch(req, { cache: "no-cache" });
+      if (res.ok) (await caches.open(CACHE)).put(key, res.clone());
       return res;
     } catch (err) {
-      const hit = await caches.match(req);
+      const hit = await caches.match(key);
       if (hit) return hit;
       throw err;
     }

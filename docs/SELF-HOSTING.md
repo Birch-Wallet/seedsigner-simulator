@@ -148,6 +148,7 @@ cp src/shims/*.py "$dest/"
 cp build/out/seedsigner-*.zip build/out/seedsigner-*.build-info.json "$dest/"   # every firmware built
 cp build/out/firmwares.json "$dest/"                                            # the list the page offers
 cp -R build/out/fonts-* "$dest/"    # the other languages' fonts, fetched on first use
+printf '{"commit": "%s"}\n' "$(git rev-parse HEAD)" > "$dest/deploy.json"      # what an open page compares against
 chmod 755 "$dest"                   # the web server must be able to read it
 ```
 
@@ -167,6 +168,7 @@ chmod 755 "$dest"                   # the web server must be able to read it
 | `seedsigner-stock.zip`, `seedsigner-pr-<N>.zip` and their build-infos | `build/out/` | the release firmware (`?firmware=stock`) and each pinned pull request, from their sections of `UPSTREAM`; optional, about 2 MB each. The page offers what `firmwares.json` lists |
 | `firmwares.json` | `build/out/` | the list of firmwares the device panel offers, written by every build from the build-infos beside it. Without it the panel offers only the firmware running |
 | `seedsigner-dev.build-info.json` | `build/out/` | what the build is: pin, branch, published hashes, dependency versions. The page's **i** panel is filled from it, and says it cannot describe the build if it is missing |
+| `deploy.json` | `deploy.sh` | the commit this copy was deployed from. A page left open, or a Home Screen app resumed days later, compares it with the commit it started with and offers a reload when they differ, since an installed app is resumed rather than loaded again and has no reload button of its own; optional, and without it the page never offers one |
 
 The shims sit next to the page rather than inside the firmware zip deliberately: it
 keeps the zip exactly what the build script produced, with the seams visibly
@@ -213,7 +215,8 @@ server {
 
     # Pyodide, zxing-wasm and the fonts sit in directories named by a hash of
     # what is in them, so a new version is a new URL: cache them for good.
-    location ~ ^/(pyodide|zxing|fonts)-[0-9a-f]{8}/ {
+    # Quoted: unquoted, nginx reads the { in {8} as the start of a block.
+    location ~ "^/(pyodide|zxing|fonts)-[0-9a-f]{8}/" {
         add_header Cache-Control "public, max-age=31536000, immutable" always;
         add_header Cross-Origin-Opener-Policy   same-origin  always;
         add_header Cross-Origin-Embedder-Policy require-corp always;
@@ -231,8 +234,17 @@ server {
 }
 ```
 
-Two nginx-specific traps:
+The nginx-specific traps:
 
+- **`Cache-Control: no-cache` belongs on `location /`, not only on `sw.js`.**
+  Without it nginx sends `Last-Modified` alone, and a browser then treats a file
+  as fresh for about a tenth of its age, without asking: a phone that fetched
+  the page a week after one deploy can be handed it for most of a day after the
+  next. `sw.js` asks the server regardless, but a first visit, a browser with no
+  service worker, and anything fetched before the service worker takes over do
+  not go through it. Likewise the immutable block wants all three hash-named
+  directories, matched by pattern rather than by one hash, or the next Pyodide
+  or zxing-wasm update quietly loses it. `deploy.sh --url` checks both.
 - **`add_header` does not inherit into a nested block that has its own.** If any
   `location` in this server adds a header of its own, it drops every `add_header`
   from the parent (including these two), and the page silently loses isolation.
@@ -258,6 +270,14 @@ sim.example.org {
         Cross-Origin-Embedder-Policy require-corp
         Cross-Origin-Resource-Policy same-origin
     }
+    # Asked about on every load, except the hash-named directories, which never
+    # change and are kept for good (see the nginx notes).
+    @hashed path_regexp ^/(pyodide|zxing|fonts)-[0-9a-f]+/
+    @fresh {
+        not path_regexp ^/(pyodide|zxing|fonts)-[0-9a-f]+/
+    }
+    header @fresh Cache-Control "no-cache"
+    header @hashed Cache-Control "public, max-age=31536000, immutable"
     # The link preview may be shown by other sites (see the nginx notes).
     header /og-image.png Cross-Origin-Resource-Policy cross-origin
     # The worker's own policy (see the nginx notes).
@@ -280,6 +300,7 @@ From the outside, before you even open a browser:
 
 ```sh
 curl -sI https://sim.example.org/ | grep -i cross-origin
+curl -sI https://sim.example.org/ | grep -i cache-control                      # no-cache
 curl -sI https://sim.example.org/worker.js | grep -i content-security-policy   # connect-src 'self'
 ```
 
@@ -310,7 +331,8 @@ SIM_URL=https://sim.example.org python3 test/run.py
 | Stuck on "unpacking firmware…" | `seedsigner-dev.zip` (or, with `?firmware=stock`, `seedsigner-stock.zip`) missing or truncated |
 | SeedSigner draws, but scanning says "no camera API here" | not a secure context: use https or localhost |
 | Camera permission prompt never appears | the firmware only opens the camera when you enter a scan screen; that is intended |
-| Old firmware, new page, weird errors | a stale service-worker cache; bump `VERSION` in `sw.js` and reload |
+| A deploy does not show, or old firmware turns up under a new page | the page, its scripts or the zips are sent without `Cache-Control: no-cache` (`curl -sI` one), so the browser keeps an old copy; failing that, a stale service-worker cache: bump `VERSION` in `sw.js` and reload |
+| A Home Screen app still runs the old version | it was resumed, not loaded again. Once `deploy.json` names a newer commit the bar offers a reload (the orange arrow); closing the app from the app switcher and opening it again does the same |
 
 ## Verifying what you are serving
 

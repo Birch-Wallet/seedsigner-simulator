@@ -29,7 +29,7 @@ downloads the Pyodide runtime and builds the firmware zip from its pinned upstre
 commit, which takes a few minutes; later runs reuse all of it.
 
 A subset, by substring on the step name -- the names are `leak_scan`, `worker_csp`, `device`, `record`, `threads`, `toasts`,
-`build_info`, `firmware_choice`, `settings`, `persistent_settings`, `languages`, `scan_seedqr`, `scan_compact`, `scan_jsqr`, `scan_native`,
+`build_info`, `firmware_choice`, `settings`, `persistent_settings`, `offline`, `languages`, `scan_seedqr`, `scan_compact`, `scan_jsqr`, `scan_native`,
 `camera_stall`, `passphrase`, `image_entropy`, `mainnet`:
 
     python3 test/run.py scan          # everything with "scan" in the name
@@ -208,6 +208,18 @@ the firmware's own menus, a change survives a reload and the page's storage
 holds the firmware's own settings file; the panel the URL asks for and a network
 the URL names still win over what was saved; turned off, the saved copy is erased
 and the next reload is back on the defaults.
+
+**`test_offline.py`**: the page as a Home Screen app, in one browser profile,
+from a server of its own that sends `Last-Modified` and no `Cache-Control`, as a
+server nobody configured does. One online launch keeps Pyodide and the zip,
+because the firmware waits for the service worker to take the page over before
+it starts, and keeps every other firmware `firmwares.json` lists. With the page
+left open, a new commit in `deploy.json` lights the update button when the page
+is looked at again, and the same commit does not; the next launch shows the new
+page although the browser's cache would call the old one fresh, and Reload loads
+the newest. Then the server is switched off, and the app still starts, on the
+other panel, and on a firmware it never ran online: each a query string never
+opened online.
 
 **`test_languages.py`**: every translation, through Settings > Language. The
 menu offers them, which it only does when their `.mo` files are in the zip;
